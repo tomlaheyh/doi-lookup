@@ -170,13 +170,120 @@ function showDOIModal(result, linksHtml) {
   };
   
   // Build content HTML
-  let html = '<h2 style="margin-top: 0; color: #333; border-bottom: 2px solid #0066cc; padding-bottom: 10px;">DOI Lookup Results</h2>';
-  
+  let html = '';
+
   // ========================================
-  // DRAFT REPORT SECTION (User-Facing)
+  // SUMMARY HEADER BLOCK (no title)
+  // ========================================
+  const summaryTitle  = result.doiOrgTitle   || result.raTitle   || null;
+  const summaryDate   = result.doiOrgPublishedDate || result.raPublishedDate || result.doiOrgEarliestTimestamp || null;
+  const summaryPublisher = result.doiOrgPublisher || result.raPublisher || null;
+  const summaryJournal   = result.doiOrgJournal   || result.raJournal   || null;
+  const summaryDoi    = result.doiOrgDoi || null;
+  const summaryRa     = result.doiOrgRa  || null;
+  const summaryRaDataUrl = summaryRa === 'Crossref'  ? `https://api.crossref.org/works/${summaryDoi}`  :
+                           summaryRa === 'DataCite'  ? `https://api.datacite.org/dois/${summaryDoi}`   :
+                           summaryRa === 'JaLC'      ? `https://api.japanlinkcenter.org/dois/${summaryDoi}` :
+                           summaryRa === 'mEDRA'     ? `https://api.medra.org/metadata/${summaryDoi}`  : null;
+
+  // Parse all ISSNs for summary
+  const summaryIssnRaw = result.doiOrgIssn || result.raIssn;
+  let summaryIssns = [];
+  if (summaryIssnRaw) {
+    try {
+      const arr = typeof summaryIssnRaw === 'string' && summaryIssnRaw.startsWith('[') ? JSON.parse(summaryIssnRaw) : [summaryIssnRaw];
+      summaryIssns = arr.map(i => i.trim()).filter(Boolean);
+    } catch (e) { summaryIssns = []; }
+  }
+
+  // Quality from SJR (will be computed after SJR lookup below, placeholder for now)
+  // We attach it to result._sjrScore in checkAllDOILinks
+  const sjrScore = result._sjrScore ? parseFloat(result._sjrScore) : null;
+  const quality = sjrScore === null ? 'Low or Unknown Quality'
+                : sjrScore >= 3    ? 'High Quality'
+                : sjrScore >= 0.8  ? 'Good Quality'
+                : 'Low or Unknown Quality';
+  const qualityBg     = sjrScore >= 3   ? '#d4edda' : sjrScore >= 0.8 ? '#fff8d6' : '#f0f0f0';
+  const qualityBorder = sjrScore >= 3   ? '#82c882' : sjrScore >= 0.8 ? '#e6c84a' : '#ccc';
+  const qualityText   = sjrScore >= 3   ? '#2d6a2d' : sjrScore >= 0.8 ? '#7a5c00' : '#666';
+
+  html += '<div style="margin-bottom: 24px; padding: 20px; background: #f8f7f3; border-left: 4px solid #005a8c;">';
+  html += '<div style="font-weight: bold; color: #005a8c; font-size: 17px; margin-bottom: 14px; letter-spacing: 0.5px;">Summary</div>';
+
+  // DOI
+  if (summaryDoi) {
+    html += `<div style="font-family: monospace; font-size: 17px; font-weight: bold; color: #666; margin-bottom: 8px;">${summaryDoi} (<a href="https://doi.org/${summaryDoi}" target="_blank" style="color: #005a8c;">Link</a>)</div>`;
+  }
+
+  // Title
+  if (summaryTitle) {
+    html += `<div style="font-size: 17px; font-weight: bold; color: #1a1a18; margin-bottom: 10px; line-height: 1.4;">${summaryTitle}</div>`;
+  }
+
+  // Quality on its own highlighted line
+  html += `<div style="display: inline-block; margin-bottom: 10px; padding: 3px 12px; background: ${qualityBg}; border: 1px solid ${qualityBorder}; font-size: 17px; font-weight: bold; color: ${qualityText};">Quality: ${quality}</div>`;
+
+  // Publish date
+  if (summaryDate) {
+    const displayDate = summaryDate.length > 10 ? summaryDate.substring(0, 10) : summaryDate;
+    html += `<div style="color: #555; font-size: 17px; font-weight: bold; margin-bottom: 6px;">Publish Date: ${displayDate}</div>`;
+  }
+
+  const raHomePage = summaryRa === 'Crossref'  ? `https://search.crossref.org/search/works?q=${encodeURIComponent(summaryDoi)}&from_ui=yes`
+                   : summaryRa === 'DataCite'  ? `https://search.datacite.org/works/${summaryDoi}`
+                   : summaryRa === 'JaLC'      ? 'https://japanlinkcenter.org/'
+                   : summaryRa === 'mEDRA'     ? 'https://www.medra.org/'
+                   : null;
+
+  // RA Site | API links
+  if (summaryRa) {
+    html += '<div style="font-size: 17px; font-weight: bold; margin-bottom: 6px;">';
+    html += `<span style="color: #555;">${summaryRa}:</span> `;
+    if (raHomePage) {
+      html += `<a href="${raHomePage}" target="_blank" style="color: #005a8c;">Site</a>`;
+    }
+    if (raHomePage && summaryRaDataUrl) html += ' | ';
+    if (summaryRaDataUrl) {
+      html += `<a href="${summaryRaDataUrl}" target="_blank" style="color: #005a8c;">API</a>`;
+    }
+    html += '</div>';
+  }
+
+  // Citation count (plain text, no link)
+  const citationCount = result.doiOrgCitationCount ?? result.raCitationCount ?? null;
+  if (citationCount !== null && citationCount !== undefined) {
+    html += `<div style="color: #555; font-size: 17px; font-weight: bold; margin-bottom: 6px;">CrossRef: Citation counts = ${citationCount}</div>`;
+  }
+
+  // Publisher
+  if (summaryPublisher) {
+    html += `<div style="color: #555; font-size: 17px; font-weight: bold; margin-bottom: 6px;">Publisher: ${summaryPublisher}</div>`;
+  }
+
+  // Country (from ISSN portal)
+  if (result._issnCountry) {
+    html += `<div style="color: #555; font-size: 17px; font-weight: bold; margin-bottom: 6px;">Country: ${result._issnCountry}</div>`;
+  }
+
+  // Journal
+  if (summaryJournal) {
+    html += `<div style="color: #555; font-size: 17px; font-weight: bold; margin-bottom: 6px;">Journal: <span style="color: #1a1a18;">${summaryJournal}</span></div>`;
+  }
+
+  // ISSNs with links
+  if (summaryIssns.length > 0) {
+    const issnLinks = summaryIssns.map(i =>
+      `<a href="https://portal.issn.org/resource/ISSN/${i}" target="_blank" style="color: #005a8c;">${i}</a>`
+    ).join(', ');
+    html += `<div style="color: #555; font-size: 17px; font-weight: bold;">ISSN: ${issnLinks}</div>`;
+  }
+
+  html += '</div>'; // Close summary block
+
+  // ========================================
+  // DRAFT REPORT SECTION
   // ========================================
   html += '<div style="background: #e8f4f8; padding: 20px; border-radius: 8px; margin-bottom: 25px; border: 2px solid #0066cc;">';
-  html += '<div style="font-weight: bold; color: #0066cc; margin-bottom: 15px; font-size: 18px; border-bottom: 1px solid #0066cc; padding-bottom: 8px;">📋 Draft Report (User-Facing)</div>';
   
   // International DOI Foundation Section
   html += '<div style="margin-bottom: 20px;">';
@@ -530,278 +637,7 @@ function showDOIModal(result, linksHtml) {
   html += '</div>'; // Close Links section
   
   html += '</div>'; // Close draft report section
-  
-  // ========================================
-  // STRUCTURED DATA SECTION (for development/tracking)
-  // ========================================
-  html += '<div style="background: #f8f9fa; padding: 15px; border-radius: 6px; margin-bottom: 20px; font-family: monospace; font-size: 12px; line-height: 1.8;">';
-  html += '<div style="font-weight: bold; color: #666; margin-bottom: 10px; font-size: 14px;">🔧 Structured Data (Development)</div>';
-  
-  // Helper function to add field
-  const addField = (label, value) => {
-    html += '<div style="margin-bottom: 8px; word-break: break-all;">';
-    html += `<span style="color: #0066cc; font-weight: bold;">${label}:</span> `;
-    html += `<span style="color: #333;">${value !== null && value !== undefined ? value : 'null'}</span>`;
-    html += '</div>';
-  };
-  
-  // Display all doiOrg fields
-  addField('doiOrgDoi', result.doiOrgDoi);
-  addField('doiOrgRa', result.doiOrgRa);
-  addField('doiOrgUrl', result.doiOrgUrl);
-  addField('doiOrgEarliestTimestamp', result.doiOrgEarliestTimestamp);
-  addField('doiOrgLatestTimestamp', result.doiOrgLatestTimestamp);
-  addField('doiOrgAgeYears', result.doiOrgAgeYears);
-  addField('doiOrgTitle', result.doiOrgTitle);
-  addField('doiOrgAuthors', result.doiOrgAuthors);
-  addField('doiOrgFirstAuthorGiven', result.doiOrgFirstAuthorGiven);
-  addField('doiOrgFirstAuthorFamily', result.doiOrgFirstAuthorFamily);
-  addField('doiOrgFirstAuthorOrcid', result.doiOrgFirstAuthorOrcid);
-  addField('doiOrgFirstAuthorOrcidUrl', result.doiOrgFirstAuthorOrcidUrl);
-  addField('doiOrgFirstAuthorAffiliation', result.doiOrgFirstAuthorAffiliation);
-  addField('doiOrgLastAuthorGiven', result.doiOrgLastAuthorGiven);
-  addField('doiOrgLastAuthorFamily', result.doiOrgLastAuthorFamily);
-  addField('doiOrgLastAuthorOrcid', result.doiOrgLastAuthorOrcid);
-  addField('doiOrgLastAuthorOrcidUrl', result.doiOrgLastAuthorOrcidUrl);
-  addField('doiOrgLastAuthorAffiliation', result.doiOrgLastAuthorAffiliation);
-  addField('doiOrgJournal', result.doiOrgJournal);
-  addField('doiOrgPublishedDate', result.doiOrgPublishedDate);
-  addField('doiOrgType', result.doiOrgType);
-  addField('doiOrgPublisher', result.doiOrgPublisher);
-  addField('doiOrgVolume', result.doiOrgVolume);
-  addField('doiOrgIssue', result.doiOrgIssue);
-  addField('doiOrgPages', result.doiOrgPages);
-  addField('doiOrgCitationCount', result.doiOrgCitationCount);
-  addField('doiOrgReferenceCount', result.doiOrgReferenceCount);
-  addField('doiOrgIssn', result.doiOrgIssn);
-  addField('doiOrgLanguage', result.doiOrgLanguage);
-  addField('doiOrgCreatedDate', result.doiOrgCreatedDate);
-  addField('doiOrgDepositedDate', result.doiOrgDepositedDate);
-  addField('doiOrgCopyright', result.doiOrgCopyright);
-  
-  // Display all RA fields (if present)
-  if (result.raTitle !== undefined) {
-    html += '</div>';
-    html += '<div style="background: #fff3e6; padding: 15px; border-radius: 6px; margin-bottom: 20px; font-family: monospace; font-size: 12px; line-height: 1.8;">';
-    html += '<div style="font-weight: bold; color: #ff8c00; margin-bottom: 10px; font-size: 14px;">Registration Agency Data (CrossRef)</div>';
-    
-    addField('raTitle', result.raTitle);
-    addField('raSubtitle', result.raSubtitle);
-    addField('raShortTitle', result.raShortTitle);
-    addField('raOriginalTitle', result.raOriginalTitle);
-    addField('raType', result.raType);
-    addField('raPublisher', result.raPublisher);
-    addField('raMember', result.raMember);
-    addField('raAuthors', result.raAuthors);
-    addField('raEditor', result.raEditor);
-    addField('raChair', result.raChair);
-    addField('raTranslator', result.raTranslator);
-    addField('raJournal', result.raJournal);
-    addField('raShortJournal', result.raShortJournal);
-    addField('raVolume', result.raVolume);
-    addField('raIssue', result.raIssue);
-    addField('raPage', result.raPage);
-    addField('raArticleNumber', result.raArticleNumber);
-    addField('raPublishedPrint', result.raPublishedPrint);
-    addField('raPublishedOnline', result.raPublishedOnline);
-    addField('raIssued', result.raIssued);
-    addField('raIndexed', result.raIndexed);
-    addField('raCreated', result.raCreated);
-    addField('raAbstract', result.raAbstract);
-    addField('raSubject', result.raSubject);
-    addField('raLanguage', result.raLanguage);
-    addField('raResource', result.raResource);
-    addField('raLink', result.raLink);
-    addField('raReference', result.raReference);
-    addField('raReferencesCount', result.raReferencesCount);
-    addField('raCitationCount', result.raCitationCount);
-    addField('raRelation', result.raRelation);
-    addField('raFunder', result.raFunder);
-    addField('raClinicalTrialNumber', result.raClinicalTrialNumber);
-    addField('raLicense', result.raLicense);
-    addField('raAssertion', result.raAssertion);
-    addField('raUpdateTo', result.raUpdateTo);
-    addField('raUpdatedBy', result.raUpdatedBy);
-    addField('raUpdatePolicy', result.raUpdatePolicy);
-    addField('raArchive', result.raArchive);
-    addField('raIssn', result.raIssn);
-    addField('raIsbn', result.raIsbn);
-    addField('raDoi', result.raDoi);
-    addField('raUrl', result.raUrl);
-  }
-  
-  html += '</div>';
-  
-  // PubMed Data Section (if available)
-  if (result.pubmedFound) {
-    html += '<div style="margin-bottom: 20px; padding-top: 20px; border-top: 2px solid #ddd;">';
-    html += '<div style="font-weight: bold; color: #28a745; margin-bottom: 10px; font-size: 16px;">PubMed Data</div>';
-    html += '<div style="background: #f0f8f4; padding: 15px; border-radius: 6px; font-family: monospace; font-size: 12px; line-height: 1.8;">';
-    
-    // Basic PubMed Info
-    addField('pubmedPMID', result.pubmedPMID);
-    addField('pubmedUrl', result.pubmedUrl);
-    addField('pubmedTitle', result.pubmedTitle);
-    addField('pubmedJournal', result.pubmedJournal);
-    addField('pubmedPublishDate', result.pubmedPublishDate);
-    addField('pubmedYear', result.pubmedYear);
-    
-    // Status Flags
-    addField('pubmedIsMedline', result.pubmedIsMedline);
-    addField('pubmedIsPreprint', result.pubmedIsPreprint);
-    addField('pubmedFullTextFree', result.pubmedFullTextFree);
-    
-    // Warnings
-    if (result.pubmedHasCorrection) {
-      html += '<div style="margin-bottom: 8px; padding: 8px; background: #fff3cd; border-left: 4px solid #ffc107; border-radius: 4px;">';
-      html += '<span style="color: #856404; font-weight: bold;">⚠️ HAS CORRECTION</span>';
-      if (result.pubmedCorrectionPMID) {
-        html += ` <span style="color: #856404;">PMID: ${result.pubmedCorrectionPMID}</span>`;
-      }
-      html += '</div>';
-    }
-    if (result.pubmedHasRetraction) {
-      html += '<div style="margin-bottom: 8px; padding: 8px; background: #f8d7da; border-left: 4px solid #dc3545; border-radius: 4px;">';
-      html += '<span style="color: #721c24; font-weight: bold;">🚨 HAS RETRACTION</span>';
-      if (result.pubmedRetractionPMID) {
-        html += ` <span style="color: #721c24;">PMID: ${result.pubmedRetractionPMID}</span>`;
-      }
-      html += '</div>';
-    }
-    
-    // PMC Info
-    if (result.pubmedPMCID) {
-      addField('pubmedPMCID', result.pubmedPMCID);
-      addField('pubmedPMCUrl', result.pubmedPMCUrl);
-    }
-    
-    // ISSNs
-    addField('pubmedISSN', result.pubmedISSN);
-    addField('pubmedESSN', result.pubmedESSN);
-    
-    // Authors
-    addField('pubmedAuthorFirst', result.pubmedAuthorFirst);
-    addField('pubmedAuthorFirstORCID', result.pubmedAuthorFirstORCID);
-    addField('pubmedAuthorLast', result.pubmedAuthorLast);
-    addField('pubmedAuthorLastORCID', result.pubmedAuthorLastORCID);
-    addField('pubmedAuthorCount', result.pubmedAuthorCount);
-    
-    // Citation Metrics
-    addField('pubmedCitationCount', result.pubmedCitationCount);
-    addField('pubmedCitationCountSource', result.pubmedCitationCountSource);
-    addField('pubmedRCR', result.pubmedRCR);
-    addField('pubmedNIHPercentile', result.pubmedNIHPercentile);
-    
-    if (result.pubmedCitationCountFallback) {
-      html += '<div style="margin-bottom: 8px; padding: 6px; background: #d1ecf1; border-left: 3px solid #17a2b8; border-radius: 4px;">';
-      html += '<span style="color: #0c5460; font-size: 11px;">ℹ️ Citation data from Europe PMC fallback (iCite unavailable)</span>';
-      html += '</div>';
-    }
-    
-    // MeSH Terms
-    if (result.pubmedMeSHTerms && result.pubmedMeSHTerms.length > 0) {
-      addField('pubmedMeSHTerms', result.pubmedMeSHTerms.join('; '));
-    }
-    
-    // Keywords
-    if (result.pubmedKeywords && result.pubmedKeywords.length > 0) {
-      addField('pubmedKeywords', result.pubmedKeywords.join('; '));
-    }
-    
-    // Publication Types
-    if (result.pubmedPublicationTypes && result.pubmedPublicationTypes.length > 0) {
-      addField('pubmedPublicationTypes', result.pubmedPublicationTypes.join('; '));
-    }
-    
-    // Grants
-    if (result.pubmedGrants && result.pubmedGrants.length > 0) {
-      const grantsStr = result.pubmedGrants.map(g => `${g.agency} ${g.grantId}`).join('; ');
-      addField('pubmedGrants', grantsStr);
-    }
-    
-    // Databanks
-    if (result.pubmedDatabanks && result.pubmedDatabanks.length > 0) {
-      const databanksStr = result.pubmedDatabanks.map(d => `${d.name}: ${d.accession}`).join('; ');
-      addField('pubmedDatabanks', databanksStr);
-    }
-    
-    // Abstract
-    if (result.pubmedAbstract) {
-      html += '<div style="margin-bottom: 8px; margin-top: 12px; padding-top: 12px; border-top: 1px solid #d4edda;">';
-      html += '<span style="color: #28a745; font-weight: bold;">Abstract:</span>';
-      html += `<div style="margin-top: 6px; color: #333; white-space: pre-wrap; font-family: inherit;">${result.pubmedAbstract}</div>`;
-      html += '</div>';
-    }
-    
-    // Links
-    html += '<div style="margin-top: 12px; padding-top: 12px; border-top: 1px solid #d4edda;">';
-    html += '<div style="color: #28a745; font-weight: bold; margin-bottom: 6px;">Quick Links:</div>';
-    if (result.pubmedUrl) {
-      html += `<div><a href="${result.pubmedUrl}" target="_blank" style="color: #007bff; text-decoration: none;">→ View in PubMed</a></div>`;
-    }
-    if (result.pubmedPMCUrl) {
-      html += `<div><a href="${result.pubmedPMCUrl}" target="_blank" style="color: #007bff; text-decoration: none;">→ View Full Text (PMC)</a></div>`;
-    }
-    if (result.pubmedSimilarArticlesUrl) {
-      html += `<div><a href="${result.pubmedSimilarArticlesUrl}" target="_blank" style="color: #007bff; text-decoration: none;">→ Similar Articles</a></div>`;
-    }
-    if (result.pubmedCitedByUrl) {
-      html += `<div><a href="${result.pubmedCitedByUrl}" target="_blank" style="color: #007bff; text-decoration: none;">→ Cited By</a></div>`;
-    }
-    html += '</div>';
-    
-    html += '</div>';
-    html += '</div>';
-  } else {
-    // Not in PubMed
-    html += '<div style="margin-bottom: 20px; padding: 12px; background: #f8f9fa; border-left: 4px solid #6c757d; border-radius: 4px;">';
-    html += '<span style="color: #495057; font-style: italic;">ℹ️ This DOI was not found in PubMed</span>';
-    html += '</div>';
-  }
-  
-  html += '</div>';
-  
-  // Raw data sections (if available)
-  if (result._raw) {
-    // RA Data section
-    html += '<div style="margin-bottom: 20px; padding-top: 20px; border-top: 2px solid #ddd;">';
-    html += '<div style="font-weight: bold; color: #0066cc; margin-bottom: 10px; font-size: 16px;">Registration Agency Data (Raw)</div>';
-    if (result._raw.raData) {
-      html += `<pre style="background: #f5f5f5; padding: 12px; border-radius: 4px; overflow-x: auto; font-size: 11px; max-height: 200px;">${JSON.stringify(result._raw.raData, null, 2)}</pre>`;
-    } else {
-      html += '<div style="color: #999; font-style: italic;">Failed to fetch RA data</div>';
-    }
-    html += '</div>';
-    
-    // Handle Data section
-    html += '<div style="margin-bottom: 20px; padding-top: 20px; border-top: 2px solid #ddd;">';
-    html += '<div style="font-weight: bold; color: #0066cc; margin-bottom: 10px; font-size: 16px;">Handle System Data (Raw)</div>';
-    if (result._raw.handleData) {
-      html += `<pre style="background: #f5f5f5; padding: 12px; border-radius: 4px; overflow-x: auto; font-size: 11px; max-height: 300px;">${JSON.stringify(result._raw.handleData, null, 2)}</pre>`;
-    } else {
-      html += '<div style="color: #999; font-style: italic;">Failed to fetch Handle data</div>';
-    }
-    html += '</div>';
-    
-    // Content Negotiation Data section
-    html += '<div style="margin-bottom: 20px; padding-top: 20px; border-top: 2px solid #ddd;">';
-    html += '<div style="font-weight: bold; color: #0066cc; margin-bottom: 10px; font-size: 16px;">Content Negotiation Data (Raw)</div>';
-    if (result._raw.contentNegData) {
-      html += `<pre style="background: #f5f5f5; padding: 12px; border-radius: 4px; overflow-x: auto; font-size: 11px; max-height: 400px;">${JSON.stringify(result._raw.contentNegData, null, 2)}</pre>`;
-    } else {
-      html += '<div style="color: #999; font-style: italic;">Failed to fetch Content Negotiation data</div>';
-    }
-    html += '</div>';
-    
-    // CrossRef Data section (if present)
-    if (result._raw.crossRefData) {
-      html += '<div style="margin-bottom: 20px; padding-top: 20px; border-top: 2px solid #ddd;">';
-      html += '<div style="font-weight: bold; color: #ff8c00; margin-bottom: 10px; font-size: 16px;">CrossRef API Data (Raw)</div>';
-      html += `<pre style="background: #fff3e6; padding: 12px; border-radius: 4px; overflow-x: auto; font-size: 11px; max-height: 400px;">${JSON.stringify(result._raw.crossRefData, null, 2)}</pre>`;
-      html += '</div>';
-    }
-  }
-  
+
   html += '</div>'; // Close Close button wrapper (removed for inline display)
 
   // Render inline into #results div instead of a modal popup
@@ -926,6 +762,37 @@ async function checkAllDOILinks(doi, result) {
     data: firstIssn ? `https://portal.issn.org/resource/ISSN/${firstIssn}?format=json` : null,
   };
 
+  // Fetch country from ISSN portal JSON
+  // The ISSN portal returns country in the @graph array as schema:countryOfOrigin or as a named property
+  if (firstIssn) {
+    try {
+      const issnApiResp = await fetch(`https://portal.issn.org/resource/ISSN/${firstIssn}?format=json`);
+      if (issnApiResp.ok) {
+        const issnJson = await issnApiResp.json();
+        // Country is usually in the @graph array - look for countryOfOrigin or country property
+        const graph = issnJson['@graph'] || [];
+        let country = null;
+        for (const node of graph) {
+          const val = node['schema:countryOfOrigin'] || node['countryOfOrigin'] || node['country'] || null;
+          if (val) {
+            // May be a string or { '@value': 'US' } or { '@id': '...' }
+            country = typeof val === 'string' ? val
+                    : val['@value'] || val['@id'] || null;
+            // ISSN portal often returns country codes or full names - use as-is
+            if (country && country.includes('/')) {
+              // It's a URI like http://id.loc.gov/vocabulary/countries/nyu - extract last segment
+              country = country.split('/').pop().toUpperCase();
+            }
+            break;
+          }
+        }
+        if (country) result._issnCountry = country;
+      }
+    } catch (e) {
+      console.warn('[ISSN] Country fetch failed:', e);
+    }
+  }
+
   // SJR lookup from local CSV - standalone, no chrome.storage dependency
   // Test (Nature): ISSN 0028-0836 or 1476-4687 → Sourceid 22981
   // Web: https://www.scimagojr.com/journalsearch.php?q=22981&tip=sid&clean=0#:~:text=External%20Cites%20per%20Doc
@@ -950,6 +817,7 @@ async function checkAllDOILinks(doi, result) {
         const sourceid = cols[2].trim();
         const sjrValue = parseFloat(cols[3].trim().replace(',', '.'));
         if (issnSet.has(issn1) || issnSet.has(issn2)) {
+          console.log('[SJR] Match found:', { issn1, issn2, sourceid, sjrValue, raw: cols[3] });
           return {
             sjr: isNaN(sjrValue) ? null : sjrValue.toFixed(2),
             sourceid,
@@ -981,8 +849,10 @@ async function checkAllDOILinks(doi, result) {
   const sjrResult = await lookupSJR(allIssns);
   const sjr = {
     web: sjrResult ? sjrResult.web : null,
-    data: sjrResult ? sjrResult.sjr : 'N/A', // Score as plain value, not a link
+    data: sjrResult ? sjrResult.sjr : 'N/A',
   };
+  // Attach SJR score to result for summary header quality indicator
+  result._sjrScore = sjrResult ? sjrResult.sjr : null;
   
   // Author ORCIDs - use same source-selection logic (RA wins ties)
   const raFirstOrcidLinks = result.raFirstAuthorOrcid || null;
