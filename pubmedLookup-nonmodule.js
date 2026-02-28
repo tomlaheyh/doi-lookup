@@ -185,6 +185,8 @@ const PubMedLookup = {
       if (data.pubmedPublicationTypes.includes('Retraction of Publication')) {
         hasRetraction = true;
       }
+      // "Retracted Publication" = this article itself has been retracted
+      data.pubmedIsRetractedPublication = data.pubmedPublicationTypes.includes('Retracted Publication');
 
       data.pubmedHasCorrection = hasCorrection;
       data.pubmedCorrectionPMID = correctionPmid;

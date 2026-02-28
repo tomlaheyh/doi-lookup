@@ -147,53 +147,66 @@ const DOILookup = {
   
   /**
    * Fetch data from all doi.org sources
+   * For CrossRef and DataCite, skip handle and content negotiation —
+   * their APIs provide richer data directly.
+   * For all other RAs, fall back to handle + content negotiation.
    */
   async fetchAllSources(doi) {
     const raUrl = `https://doi.org/doiRA/${doi}`;
+
+    // Step 1: Always fetch RA first — needed to route everything else
+    let raData = null;
+    try {
+      const raResponse = await fetch(raUrl);
+      if (raResponse.ok) {
+        raData = await raResponse.json();
+      } else {
+        console.warn('RA fetch failed:', raResponse.status);
+      }
+    } catch (e) {
+      console.warn('RA fetch error:', e.message);
+    }
+
+    const ra = raData?.[0]?.RA || null;
+    console.log(`[DOI Lookup] RA identified as: ${ra}`);
+
+    // Step 2: For CrossRef and DataCite, skip handle + content negotiation entirely
+    // Their own APIs provide URL, dates, and all metadata directly
+    if (ra === 'Crossref' || ra === 'DataCite') {
+      console.log(`[DOI Lookup] Skipping handle + content negotiation for ${ra}`);
+      return [raData, null, null];
+    }
+
+    // Step 3: For all other RAs (JaLC, mEDRA, CNKI, etc.), fetch handle + content negotiation
     const handleUrl = `https://doi.org/api/handles/${doi}`;
     const contentNegUrl = `https://doi.org/${doi}`;
-    
-    // Fetch RA and Handle data
-    const [raResponse, handleResponse] = await Promise.all([
-      fetch(raUrl),
+
+    const [handleResponse] = await Promise.all([
       fetch(handleUrl)
     ]);
-    
-    // Process RA response
-    let raData = null;
-    if (raResponse.ok) {
-      raData = await raResponse.json();
-    } else {
-      console.warn('RA fetch failed:', raResponse.status);
-    }
-    
-    // Process Handle response
+
     let handleData = null;
     if (handleResponse.ok) {
       handleData = await handleResponse.json();
     } else {
       console.warn('Handle fetch failed:', handleResponse.status);
     }
-    
-    // Try content negotiation, but handle CORS errors gracefully (especially for JaLC)
+
     let contentNegData = null;
     try {
       const contentNegResponse = await fetch(contentNegUrl, {
-        headers: {
-          'Accept': 'application/citeproc+json'
-        }
+        headers: { 'Accept': 'application/citeproc+json' }
       });
-      
       if (contentNegResponse.ok) {
         contentNegData = await contentNegResponse.json();
       } else {
         console.warn('Content Negotiation fetch failed:', contentNegResponse.status);
       }
     } catch (error) {
-      // CORS or network error - this is expected for some RAs like JaLC
+      // CORS or network error - expected for some RAs like JaLC
       console.warn('Content Negotiation fetch error (likely CORS):', error.message);
     }
-    
+
     return [raData, handleData, contentNegData];
   },
   

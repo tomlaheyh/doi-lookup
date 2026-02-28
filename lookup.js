@@ -2,6 +2,69 @@
 // Adapted from popup.js - no chrome extension dependencies
 // Requires: doiLookup.js (window.DOILookup) and pubmedLookup-nonmodule.js (window.PubMedLookup)
 
+// ============================================================================
+// SJR CSV CACHE
+// Loaded once on first lookup, then reused as an in-memory Map keyed by ISSN.
+// ============================================================================
+let _sjrCache = null;         // Map<issn, { sjr, sourceid, web }> once loaded
+let _sjrCacheLoading = null;  // Promise while loading, to prevent parallel fetches
+
+async function _loadSJRCache() {
+  if (_sjrCache) return _sjrCache;
+  if (_sjrCacheLoading) return _sjrCacheLoading;
+
+  _sjrCacheLoading = (async () => {
+    try {
+      const response = await fetch('./SJR.csv');
+      if (!response.ok) { _sjrCache = new Map(); return _sjrCache; }
+      const csvText = await response.text();
+      const lines = csvText.split('\n');
+      const startIndex = lines[0].includes('Sourceid') || lines[0].includes('ISSN') ? 1 : 0;
+      const map = new Map();
+      for (let i = startIndex; i < lines.length; i++) {
+        const line = lines[i].trim();
+        if (!line) continue;
+        const cols = _parseSJRCsvLine(line);
+        if (cols.length < 4) continue;
+        const issn1    = cols[0].trim();
+        const issn2    = cols[1].trim();
+        const sourceid = cols[2].trim();
+        const sjrValue = parseFloat(cols[3].trim().replace(',', '.'));
+        const entry = {
+          sjr: isNaN(sjrValue) ? null : sjrValue.toFixed(2),
+          sourceid,
+          web: `https://www.scimagojr.com/journalsearch.php?q=${sourceid}&tip=sid&clean=0#:~:text=External%20Cites%20per%20Doc`,
+        };
+        if (issn1) map.set(issn1, entry);
+        if (issn2) map.set(issn2, entry);
+      }
+      _sjrCache = map;
+      console.log(`[SJR] Cache loaded: ${map.size} ISSN entries`);
+      return _sjrCache;
+    } catch (e) {
+      console.warn('[SJR] Cache load failed:', e);
+      _sjrCache = new Map();
+      return _sjrCache;
+    }
+  })();
+
+  return _sjrCacheLoading;
+}
+
+function _parseSJRCsvLine(line) {
+  const res = [];
+  let inQuotes = false;
+  let current = '';
+  for (let i = 0; i < line.length; i++) {
+    const ch = line[i];
+    if (ch === '"') { inQuotes = !inQuotes; }
+    else if (ch === ',' && !inQuotes) { res.push(current); current = ''; }
+    else { current += ch; }
+  }
+  res.push(current);
+  return res;
+}
+
 function displayError(message) {
   const resultsDiv = document.getElementById('results');
   if (resultsDiv) {
@@ -94,7 +157,19 @@ async function handleDOILookup(doiInput) {
     }
     
     console.log('[DOI Lookup] All data ready, displaying modal');
-    
+
+    // ORCID source comparison log - remove once merge logic is finalised
+    console.log('[ORCID Sources] First author:', {
+      crossref:  allData.raFirstAuthorOrcid        || allData.doiOrgFirstAuthorOrcid || null,
+      pubmed:    allData.pubmedAuthorFirstORCID     || null,
+      openalex:  allData._oaFirstAuthorOrcid        || null,
+    });
+    console.log('[ORCID Sources] Last author:', {
+      crossref:  allData.raLastAuthorOrcid         || allData.doiOrgLastAuthorOrcid  || null,
+      pubmed:    allData.pubmedAuthorLastORCID      || null,
+      openalex:  allData._oaLastAuthorOrcid         || null,
+    });
+
     // Display results in modal - all data complete
     showDOIModal(allData, linksData);
     
@@ -288,11 +363,26 @@ function showDOIModal(result, linksHtml) {
     html += '</div>';
 
     // Affiliation
-    html += '<div style="margin-bottom: 10px; margin-left: 15px;">';
+    html += '<div style="margin-bottom: 2px; margin-left: 15px;">';
     const affText = parseAffiliation(affiliation);
     html += affText
       ? `<span style="color: #333;">${affText}</span>`
       : '<span style="color: #ccc;">No affiliation data available</span>';
+    html += '</div>';
+
+    // PubMed | ORCID | OpenAlex links
+    html += '<div style="margin-bottom: 10px; margin-left: 15px;">';
+    if (hasOrcid) {
+      const pubmedOrcidUrl   = `https://pubmed.ncbi.nlm.nih.gov/?term=${encodeURIComponent(orcidId)}[auid]`;
+      const openAlexOrcidUrl = `https://openalex.org/authors/orcid:${orcidId}`;
+      html += `<a href="${pubmedOrcidUrl}" target="_blank" style="color: #005a8c;">PubMed</a>`;
+      html += ' | ';
+      html += `<a href="${orcidUrl}" target="_blank" style="color: #005a8c;">ORCID</a>`;
+      html += ' | ';
+      html += `<a href="${openAlexOrcidUrl}" target="_blank" style="color: #005a8c;">OpenAlex</a>`;
+    } else {
+      html += '<span style="color: #ccc;">PubMed | ORCID | OpenAlex</span>';
+    }
     html += '</div>';
   };
 
@@ -317,20 +407,118 @@ function showDOIModal(result, linksHtml) {
   if (summaryDoi) {
     let doiLine = `${summaryDoi} (<a href="https://doi.org/${summaryDoi}" target="_blank" style="color: #005a8c;">Link</a>)`;
     if (result._oaFreePdf) {
-      doiLine += ` (<a href="${result._oaFreePdf}" target="_blank" style="color: #1a7a1a;">Free PDF</a>)`;
-    } else if (result._oaFreeText) {
-      doiLine += ` (<a href="${result._oaFreeText}" target="_blank" style="color: #1a7a1a;">Free Text</a>)`;
+      const label = result._oaLabel || 'Free PDF';
+      doiLine += ` (<a href="${result._oaFreePdf}" target="_blank" style="color: #1a7a1a;">${label}</a>)`;
     }
     html += `<div style="font-family: monospace; font-size: 17px; font-weight: bold; color: #666; margin-bottom: 8px;">${doiLine}</div>`;
   }
 
-  // Title
+  // Retraction / correction banner — shown above title when update-to entries exist
+  // Collect ALL distinct update entries (a retraction may appear from both publisher + retraction-watch)
+  // We dedupe by DOI+type so duplicates from two sources collapse into one entry showing both sources.
+  const _updateEntries = (() => {
+    if (result.doiOrgRa !== 'Crossref') return [];
+    const UPDATE_TYPES = ['retraction', 'correction', 'expression-of-concern', 'reinstatement', 'withdrawal'];
+    const map = new Map();
+    const ingest = (raw) => {
+      if (!raw) return;
+      try {
+        const arr = JSON.parse(raw);
+        for (const u of arr) {
+          const t = (u['update-type'] || u.type || '').toLowerCase();
+          if (!UPDATE_TYPES.includes(t)) continue;
+          const key = `${(u.DOI || '').toLowerCase()}|${t}`;
+          if (!map.has(key)) {
+            map.set(key, { type: t, DOI: u.DOI || null, sources: [], recordIds: [], label: u.label || null, date: u.updated?.['date-time'] || null });
+          }
+          const entry = map.get(key);
+          if (u.source && !entry.sources.includes(u.source)) entry.sources.push(u.source);
+          if (u['record-id'] && !entry.recordIds.includes(String(u['record-id']))) entry.recordIds.push(String(u['record-id']));
+        }
+      } catch (e) { /* skip */ }
+    };
+    ingest(result.raUpdateTo);
+    ingest(result.raUpdatedBy);
+    return [...map.values()];
+  })();
+
+  // Title — strip any existing "RETRACTED: " prefix from the title itself to avoid doubling
   if (summaryTitle) {
-    html += `<div style="font-size: 17px; font-weight: bold; color: #1a1a18; margin-bottom: 10px; line-height: 1.4;">${summaryTitle}</div>`;
+    const cleanTitle = summaryTitle.replace(/^RETRACTED:\s*/i, '');
+    const hasRetraction = _updateEntries.some(e => e.type === 'retraction');
+    const titlePrefix = hasRetraction ? '<span style="color:#cc0000;">RETRACTED: </span>' : '';
+    html += `<div style="font-size: 17px; font-weight: bold; color: #1a1a18; margin-bottom: 10px; line-height: 1.4;">${titlePrefix}${cleanTitle}</div>`;
+  }
+
+  // Abstract snippet — PubMed first, fall back to CrossRef, stop if neither
+  {
+    const rawAbstract = result.pubmedAbstract || result.raAbstract || null;
+    if (rawAbstract) {
+      // Strip HTML tags (CrossRef can include <jats:p> etc.) and normalise whitespace
+      const plain = rawAbstract.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
+      // Truncate to ~310 chars (roughly 2 lines at this font size), break at a word boundary
+      const MAX = 310;
+      const needsTruncation = plain.length > MAX;
+      const truncated = needsTruncation
+        ? plain.slice(0, MAX).replace(/\s+\S*$/, '') + '…'
+        : plain;
+
+      // Escape for use in onclick attribute
+      const escaped = plain.replace(/\\/g, '\\\\').replace(/'/g, "\\'").replace(/\n/g, '\\n');
+      const moreBtn = needsTruncation
+        ? ` <button onclick="(function(){const d=document.createElement('div');d.style.cssText='position:fixed;z-index:99999;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.5);display:flex;align-items:center;justify-content:center;';const b=document.createElement('div');b.style.cssText='background:#fff;padding:28px;max-width:680px;width:90%;max-height:75vh;overflow-y:auto;border:1.5px solid #d8d5cc;font-size:14px;color:#333;line-height:1.7;font-family:IBM Plex Sans,sans-serif;font-weight:300;';b.textContent='${escaped}';const c=document.createElement('button');c.textContent='Close';c.style.cssText='margin-top:16px;display:block;font-family:IBM Plex Mono,monospace;font-size:12px;padding:6px 16px;background:#005a8c;color:#fff;border:none;cursor:pointer;';c.onclick=function(){d.remove();};b.appendChild(c);d.appendChild(b);d.onclick=function(e){if(e.target===d)d.remove();};document.body.appendChild(d);})()" style="font-family:IBM Plex Mono,monospace;font-size:11px;padding:2px 8px;background:#005a8c;color:#fff;border:none;cursor:pointer;vertical-align:middle;margin-left:4px;">full abstract</button>`
+        : '';
+
+      html += `<div style="font-size: 14px; color: #555; font-weight: 300; margin-bottom: 10px; line-height: 1.5;">${truncated}${moreBtn}</div>`;
+    }
+  }
+
+  // BoB line — priority order: Retracted, Reinstated, Expression of Concern, Withdrawal, Correction
+  // Retraction knocks out EOC and Correction. Reinstatement only shown if also retracted.
+  // Withdrawal and Correction are independent of each other.
+  {
+    const has = (type) => _updateEntries.some(e => e.type === type);
+    const hasRetraction = has('retraction');
+    const parts = [];
+    if (hasRetraction)                      parts.push('Retracted');
+    if (hasRetraction && has('reinstatement')) parts.push('Reinstated');
+    if (!hasRetraction && has('expression-of-concern')) parts.push('Expression of Concern');
+    if (has('withdrawal'))                  parts.push('Withdrawal');
+    if (!hasRetraction && has('correction')) parts.push('Correction');
+
+    // PubMed retraction/correction status
+    const pmParts = [];
+    if (result.pubmedIsRetractedPublication)                         pmParts.push('Retracted Publication');
+    if (result.pubmedHasRetraction && result.pubmedRetractionPMID)   pmParts.push(`Retraction in PMID:${result.pubmedRetractionPMID}`);
+    else if (result.pubmedHasRetraction)                             pmParts.push('Retraction in');
+    if (result.pubmedPublicationTypes?.includes('Retraction of Publication')) pmParts.push('Retraction Notice');
+    if (result.pubmedHasCorrection && result.pubmedCorrectionPMID)   pmParts.push(`Erratum PMID:${result.pubmedCorrectionPMID}`);
+    else if (result.pubmedHasCorrection)                             pmParts.push('Erratum');
+
+    const formatCrossrefParts = parts.map(p =>
+      p === 'Retracted' ? `<span style="color:#cc0000;">Retracted</span>` : p
+    );
+    const crossrefLabel = parts.length > 0 ? ` ${formatCrossrefParts.join(' | ')} (Crossref)` : ' None';
+
+    const formatPmParts = pmParts.map(p =>
+      p === 'Retracted Publication' ? `<span style="color:#cc0000;">Retraction</span>` : p
+    );
+    const pmStatus = formatPmParts.length > 0 ? formatPmParts.join(' | ') : (result.pubmedFound ? 'None' : 'N/A');
+    html += `<div style="font-size: 17px; font-weight: bold; color: #333; margin-bottom: 6px;">Retractions/Updates:${crossrefLabel} &nbsp;|&nbsp; PubMed: ${pmStatus}</div>`;
   }
 
   // Quality on its own highlighted line
-  html += `<div style="display: inline-block; margin-bottom: 10px; padding: 3px 12px; background: ${qualityBg}; border: 1px solid ${qualityBorder}; font-size: 17px; font-weight: bold; color: ${qualityText};">Quality: ${quality}</div>`;
+  {
+    const _hasRetraction = _updateEntries.some(e => e.type === 'retraction') || result.pubmedIsRetractedPublication;
+    const _hasEOC        = _updateEntries.some(e => e.type === 'expression-of-concern');
+    if (_hasRetraction) {
+      html += `<div style="display: inline-block; margin-bottom: 10px; padding: 3px 12px; background: #fff0f0; border: 1px solid #cc0000; font-size: 17px; font-weight: bold; color: #cc0000;">Quality: Retracted</div>`;
+    } else if (_hasEOC) {
+      html += `<div style="display: inline-block; margin-bottom: 10px; padding: 3px 12px; background: #fff8e1; border: 1px solid #e07000; font-size: 17px; font-weight: bold; color: #e07000;">Quality: Expression of Concern</div>`;
+    } else {
+      html += `<div style="display: inline-block; margin-bottom: 10px; padding: 3px 12px; background: ${qualityBg}; border: 1px solid ${qualityBorder}; font-size: 17px; font-weight: bold; color: ${qualityText};">Quality: ${quality}</div>`;
+    }
+  }
 
   // Publish date
   if (summaryDate) {
@@ -376,12 +564,35 @@ function showDOIModal(result, linksHtml) {
     html += `<div style="color: #555; font-size: 17px; font-weight: bold; margin-bottom: 6px;">Citations &mdash; ${citeParts.join(' &nbsp;|&nbsp; ')}</div>`;
   }
 
-  // OpenAIRE BIP metrics line - always show
+  // OpenAIRE BIP metrics line - always show, link when data is present
   {
     const pop = result._oaPopularity || 'N/A';
     const inf = result._oaInfluence  || 'N/A';
     const imp = result._oaImpulse    || 'N/A';
-    html += `<div style="color: #555; font-size: 17px; font-weight: bold; margin-bottom: 6px;">OpenAIRE &mdash; Popularity: ${pop} &nbsp;|&nbsp; Influence: ${inf} &nbsp;|&nbsp; Impulse: ${imp}</div>`;
+    const hasOpenAireData = result._oaPopularity || result._oaInfluence || result._oaImpulse;
+    const openAireUrl = `https://explore.openaire.eu/search/publication?pid=${encodeURIComponent(summaryDoi)}`;
+    const openAireLabel = hasOpenAireData
+      ? `<a href="${openAireUrl}" target="_blank" style="color: #005a8c;">OpenAIRE</a>`
+      : `OpenAIRE`;
+    html += `<div style="color: #555; font-size: 17px; font-weight: bold; margin-bottom: 6px;">${openAireLabel} &mdash; Popularity: ${pop} &nbsp;|&nbsp; Influence: ${inf} &nbsp;|&nbsp; Impulse: ${imp}</div>`;
+  }
+
+  // SJR + DOAJ on one line
+  {
+    const sjrUrl = result._sjrUrl || null;
+    const sjrPart = sjrScore !== null
+      ? (sjrUrl
+          ? `SJR: <a href="${sjrUrl}" target="_blank" style="color: #005a8c;">${sjrScore}</a>`
+          : `SJR: ${sjrScore}`)
+      : `SJR: N/A`;
+
+    let doajPart = result._doajFound === true ? `DOAJ: Yes` : `DOAJ: No`;
+    if (result._doajFound === true) {
+      if (result._doajApc)     doajPart += ` &nbsp;|&nbsp; APC: ${result._doajApc}`;
+      if (result._doajLicence) doajPart += ` &nbsp;|&nbsp; Licence: ${result._doajLicence}`;
+    }
+
+    html += `<div style="color: #555; font-size: 17px; font-weight: bold; margin-bottom: 6px;">${sjrPart} &nbsp;|&nbsp; ${doajPart}</div>`;
   }
 
   // Altmetric | CORE | Dimensions | Google Scholar links line - always show
@@ -396,18 +607,6 @@ function showDOIModal(result, linksHtml) {
     html += ` &nbsp;|&nbsp; <a href="${dimUrl}" target="_blank" style="color: #005a8c;">Dimensions</a>`;
     html += ` &nbsp;|&nbsp; <a href="${scholarUrl}" target="_blank" style="color: #005a8c;">Google Scholar</a>`;
     html += `</div>`;
-  }
-
-  // DOAJ line - always show
-  {
-    if (result._doajFound === true) {
-      let doajLine = `DOAJ: Yes`;
-      if (result._doajApc)     doajLine += ` &nbsp;|&nbsp; APC: ${result._doajApc}`;
-      if (result._doajLicence) doajLine += ` &nbsp;|&nbsp; Licence: ${result._doajLicence}`;
-      html += `<div style="color: #555; font-size: 17px; font-weight: bold; margin-bottom: 6px;">${doajLine}</div>`;
-    } else {
-      html += `<div style="color: #555; font-size: 17px; font-weight: bold; margin-bottom: 6px;">DOAJ: No</div>`;
-    }
   }
 
   // PubMed summary line - always show if we have pubmed data
@@ -439,14 +638,12 @@ function showDOIModal(result, linksHtml) {
   }
   html += '</div>';
 
-  // Publisher
+  // Publisher + Country (from ISSN portal)
   if (summaryPublisher) {
-    html += `<div style="color: #555; font-size: 17px; font-weight: bold; margin-bottom: 6px;">Publisher: ${summaryPublisher}</div>`;
-  }
-
-  // Country (from ISSN portal)
-  if (result._issnCountry) {
-    html += `<div style="color: #555; font-size: 17px; font-weight: bold; margin-bottom: 6px;">Country: ${result._issnCountry}</div>`;
+    const countryStr = result._issnCountry ? ` &nbsp;|&nbsp; ${result._issnCountry}` : '';
+    html += `<div style="color: #555; font-size: 17px; font-weight: bold; margin-bottom: 6px;">Publisher: ${summaryPublisher}${countryStr}</div>`;
+  } else if (result._issnCountry) {
+    html += `<div style="color: #555; font-size: 17px; font-weight: bold; margin-bottom: 6px;">Publisher Country: ${result._issnCountry}</div>`;
   }
 
   // Journal
@@ -462,11 +659,70 @@ function showDOIModal(result, linksHtml) {
     html += `<div style="color: #555; font-size: 17px; font-weight: bold;">ISSN: ${issnLinks}</div>`;
   }
 
+  // ---- ORCID source comparison (testing) ----
+  {
+    const na = '<span style="color:#ccc;">—</span>';
+    const fmt = (name, orcid) => {
+      const n = name || na;
+      const o = orcid ? `<span style="font-family:monospace;font-size:12px;color:#444;">${orcid}</span>` : na;
+      return `${n} &nbsp; ${o}`;
+    };
+
+    html += '<div style="margin-top:14px;padding-top:12px;border-top:1px solid #d8d5cc;">';
+    html += '<div style="font-family:monospace;font-size:11px;color:#888;font-weight:normal;margin-bottom:6px;">ORCID source comparison (testing)</div>';
+
+    // Table header
+    html += '<table style="font-size:12px;border-collapse:collapse;width:100%;">';
+    html += '<tr style="color:#888;">';
+    html += '<td style="padding:2px 8px 4px 0;width:90px;">Source</td>';
+    html += '<td style="padding:2px 8px 4px 0;">First Author &nbsp; ORCID</td>';
+    html += '<td style="padding:2px 0 4px 0;">Last Author &nbsp; ORCID</td>';
+    html += '</tr>';
+
+    const rows = [
+      {
+        label: 'CrossRef',
+        firstName: result.raFirstAuthorGiven  ? `${result.raFirstAuthorGiven} ${result.raFirstAuthorFamily||''}`.trim() : (result.doiOrgFirstAuthorGiven||null),
+        firstOrcid: result.raFirstAuthorOrcid  || result.doiOrgFirstAuthorOrcid  || null,
+        lastName:  result.raLastAuthorGiven   ? `${result.raLastAuthorGiven} ${result.raLastAuthorFamily||''}`.trim()  : (result.doiOrgLastAuthorGiven||null),
+        lastOrcid:  result.raLastAuthorOrcid   || result.doiOrgLastAuthorOrcid   || null,
+      },
+      {
+        label: 'PubMed',
+        firstName: result.pubmedAuthorFirst  || null,
+        firstOrcid: result.pubmedAuthorFirstORCID || null,
+        lastName:  result.pubmedAuthorLast   || null,
+        lastOrcid:  result.pubmedAuthorLastORCID  || null,
+      },
+      {
+        label: 'OpenAlex',
+        firstName: result._oaFirstAuthorName  || null,
+        firstOrcid: result._oaFirstAuthorOrcid  || null,
+        lastName:  result._oaLastAuthorName   || null,
+        lastOrcid:  result._oaLastAuthorOrcid   || null,
+      },
+
+    ];
+
+    rows.forEach(r => {
+      html += '<tr style="vertical-align:top;border-top:1px solid #eee;">';
+      html += `<td style="padding:3px 8px 3px 0;color:#666;font-weight:bold;">${r.label}</td>`;
+      html += `<td style="padding:3px 8px 3px 0;">${fmt(r.firstName, r.firstOrcid)}</td>`;
+      html += `<td style="padding:3px 0;">${fmt(r.lastName, r.lastOrcid)}</td>`;
+      html += '</tr>';
+    });
+
+    html += '</table>';
+    html += '</div>';
+  }
+
   html += '</div>'; // Close summary block
 
   // ========================================
-  // DRAFT REPORT SECTION
+  // DETAILS SECTION - collapsed by default
   // ========================================
+  html += '<details style="margin-top: 16px;">';
+  html += '<summary style="font-weight: bold; color: #005a8c; font-size: 15px; cursor: pointer; user-select: none; margin-bottom: 12px;">Details</summary>';
   html += '<div style="background: #e8f4f8; padding: 20px; border-radius: 8px; margin-bottom: 25px; border: 2px solid #0066cc;">';
   
   // International DOI Foundation Section
@@ -527,7 +783,20 @@ function showDOIModal(result, linksHtml) {
   html += '<div style="margin-bottom: 20px;">';
   html += '<div style="font-weight: bold; color: #005a8c; margin-bottom: 8px; font-size: 15px;">Article Details</div>';
   html += '<div style="margin-left: 15px; line-height: 1.8;">';
-  
+
+  // RA limitation message (CNKI, ISTIC, KISTI, etc.)
+  if (result.raDisplayMessage && result.raMessage) {
+    html += '<div style="margin-bottom: 10px; padding: 10px 14px; background: #fff8e1; border-left: 4px solid #f5a623; color: #7a5c00;">';
+    html += `<strong>Note:</strong> ${result.raMessage}`;
+    if (result.raMessageUrl) {
+      html += ` <a href="${result.raMessageUrl}" target="_blank" style="color: #7a5c00; text-decoration: underline;">Learn more</a>`;
+    }
+    if (result.raWebUrl) {
+      html += ` &nbsp;|&nbsp; <a href="${result.raWebUrl}" target="_blank" style="color: #005a8c;">View on ${result.doiOrgRa} site</a>`;
+    }
+    html += '</div>';
+  }
+
   // Title
   if (result.doiOrgTitle || result.raTitle) {
     const title = result.doiOrgTitle || result.raTitle;
@@ -676,25 +945,51 @@ function showDOIModal(result, linksHtml) {
   html += '<div style="margin-bottom: 20px;">';
   html += '<div style="font-weight: bold; color: #005a8c; margin-bottom: 8px; font-size: 15px;">Links</div>';
   html += '<div style="margin-left: 15px; line-height: 1.8;">';
-  
-  // Checking message (replaced with pre-built links data)
+
   if (linksHtml) {
     html += `<div id="linksContent">${linksHtml}</div>`;
   } else {
     html += '<div style="color: #999; font-style: italic;">Links unavailable</div>';
   }
-  
+
   html += '</div>'; // Close left margin div
   html += '</div>'; // Close Links section
   
   html += '</div>'; // Close draft report section
+  html += '</details>'; // Close Details section
 
   html += '</div>'; // Close Close button wrapper (removed for inline display)
 
-  // Render inline into #results div instead of a modal popup
+  // Stamp resolved author display values onto result for CSV export
+  result._displayFirstAuthorName  = [topFirstGiven, topFirstFamily].filter(Boolean).join(' ') || null;
+  result._displayFirstAuthorOrcid = topFirstOrcid || null;
+  result._displayLastAuthorName   = [topLastGiven,  topLastFamily ].filter(Boolean).join(' ') || null;
+  result._displayLastAuthorOrcid  = topLastOrcid  || null;
+
+  // Render inline into #results div - append card for each DOI (multi-DOI support)
   const resultsDiv = document.getElementById('results');
   if (resultsDiv) {
-    resultsDiv.innerHTML = `<div style="background:white; padding:25px; border:1.5px solid #d8d5cc;">${html}</div>`;
+    const doi = result.doiOrgDoi || summaryDoi || '';
+
+    // Register result in _allResults for CSV export (index.html scope)
+    if (typeof _allResults !== 'undefined') {
+      result._doi     = doi;
+      result._checked = true;
+      _allResults.push(result);
+    }
+
+    // Card wrapper with stable id for checkbox grey-out
+    const cardId = `card-${doi.replace(/[^a-zA-Z0-9]/g, '-')}`;
+    const checkboxHtml = `
+      <label style="display:flex; align-items:center; gap:6px; margin-bottom:10px; cursor:pointer; font-size:13px; color:#666;">
+        <input type="checkbox" checked
+          onchange="onCardCheckChange('${doi.replace(/'/g, "\'")}', this.checked)"
+          style="width:15px; height:15px; cursor:pointer;" />
+        Include in export
+      </label>`;
+
+    const cardHtml = `<div id="${cardId}" style="background:white; padding:25px; border:1.5px solid #d8d5cc; margin-bottom:16px; transition: opacity 0.2s;">${checkboxHtml}${html}</div>`;
+    resultsDiv.insertAdjacentHTML('beforeend', cardHtml);
   } else {
     // Fallback: modal for extension context
     content.innerHTML = html;
@@ -729,11 +1024,36 @@ async function checkAllDOILinks(doi, result) {
       allIssnsPre = arr.map(i => i.trim()).filter(Boolean);
     } catch (e) { allIssnsPre = []; }
   }
+  const firstIssnPre = allIssnsPre[0] || null;
+
+  // SJR lookup - uses in-memory cache (loaded once, reused on subsequent lookups)
+  const lookupSJR = async (issns) => {
+    if (!issns || issns.length === 0) return null;
+    const map = await _loadSJRCache();
+    for (const issn of issns) {
+      const entry = map.get(issn.trim());
+      if (entry) return entry;
+    }
+    return null;
+  };
+
+  // PMC PDF takes priority over Unpaywall - construct directly from PMC ID if available.
+  // PMC IDs are stored as "PMC12328201" - strip the prefix to get the numeric ID.
+  // We use "Free PDF" as the label — users don't need to know it's from PMC.
+  // Note: PMC hosts both published versions and author manuscripts; we can't easily
+  // distinguish here, so we default to "Free PDF" (covers the majority of cases).
+  const pmcNumeric = result.pubmedPMCID ? String(result.pubmedPMCID).replace(/^PMC/i, '') : null;
+  if (pmcNumeric) {
+    result._oaFreePdf = `https://pmc.ncbi.nlm.nih.gov/articles/PMC${pmcNumeric}/pdf/`;
+    result._oaLabel   = 'Free PDF';
+    console.log('[FreePDF] Using PMC PDF:', result._oaFreePdf);
+  }
 
   // Run all checks in parallel - each individually capped at 4 seconds
   const [
     crossref, datacite, openalex, semanticscholar,
-    unpaywall, doaj, core, openaire, doajJournal, icite
+    unpaywall, doaj, core, openaire, doajJournal, icite,
+    oaCountry, sjrResult
   ] = await Promise.all([
     safeCheck(() => checkCrossRef(doi)),
     safeCheck(() => checkDataCite(doi)),
@@ -744,7 +1064,17 @@ async function checkAllDOILinks(doi, result) {
     safeCheck(() => checkCORE(doi)),
     safeCheck(() => checkOpenAIRE(doi, result)),
     safeCheck(() => checkDOAJJournal(allIssnsPre, result)),
-    safeCheck(() => checkICite(result.pubmedPMID, result))
+    safeCheck(() => checkICite(result.pubmedPMID, result)),
+    // OpenAlex country lookup - moved into parallel to avoid sequential bottleneck
+    safeCheck(async () => {
+      if (!firstIssnPre) return null;
+      const resp = await fetch(`https://api.openalex.org/sources?filter=issn:${firstIssnPre}`);
+      if (!resp.ok) return null;
+      const json = await resp.json();
+      return json.results?.[0]?.country_code || null;
+    }),
+    // SJR CSV lookup - moved into parallel to avoid sequential bottleneck
+    safeCheck(() => lookupSJR(allIssnsPre)),
   ]);
   
   // --- Static entries (no fetch needed) ---
@@ -806,115 +1136,41 @@ async function checkAllDOILinks(doi, result) {
     web: pmcNumericId ? `https://pmc.ncbi.nlm.nih.gov/search/?term=${encodeURIComponent(doi)}` : null,
     data: pmcNumericId ? `https://pmc.ncbi.nlm.nih.gov/api/oai/v1/mh/?verb=GetRecord&identifier=oai:pubmedcentral.nih.gov:${pmcNumericId}&metadataPrefix=oai_dc` : null,
   };
-  // ISSN for journal metrics - parse all ISSNs
-  const issnData = result.doiOrgIssn || result.raIssn;
-  let allIssns = [];
-  if (issnData) {
-    try {
-      const arr = typeof issnData === 'string' && issnData.startsWith('[') ? JSON.parse(issnData) : [issnData];
-      allIssns = arr.map(i => i.trim()).filter(Boolean);
-    } catch (e) { allIssns = []; }
-  }
-  const firstIssn = allIssns[0] || null;
+  // ISSN for journal metrics - use pre-computed allIssnsPre/firstIssnPre from above
+  const allIssns  = allIssnsPre;
+  const firstIssn = firstIssnPre;
 
   // Test (ISSN Web): https://portal.issn.org/resource/ISSN/0028-0836
-  // Test (ISSN Data): https://portal.issn.org/resource/ISSN/0028-0836?format=json
+  // Data is content-negotiation only (needs Accept: application/json header) - not clickable in browser
   const issn = {
     web: firstIssn ? `https://portal.issn.org/resource/ISSN/${firstIssn}` : null,
-    data: firstIssn ? `https://portal.issn.org/resource/ISSN/${firstIssn}?format=json` : null,
+    data: null,
   };
 
-  // Fetch country from ISSN portal JSON
-  // The ISSN portal returns country in the @graph array as schema:countryOfOrigin or as a named property
-  if (firstIssn) {
-    try {
-      const issnApiResp = await fetch(`https://portal.issn.org/resource/ISSN/${firstIssn}?format=json`);
-      if (issnApiResp.ok) {
-        const issnJson = await issnApiResp.json();
-        // Country is usually in the @graph array - look for countryOfOrigin or country property
-        const graph = issnJson['@graph'] || [];
-        let country = null;
-        for (const node of graph) {
-          const val = node['schema:countryOfOrigin'] || node['countryOfOrigin'] || node['country'] || null;
-          if (val) {
-            // May be a string or { '@value': 'US' } or { '@id': '...' }
-            country = typeof val === 'string' ? val
-                    : val['@value'] || val['@id'] || null;
-            // ISSN portal often returns country codes or full names - use as-is
-            if (country && country.includes('/')) {
-              // It's a URI like http://id.loc.gov/vocabulary/countries/nyu - extract last segment
-              country = country.split('/').pop().toUpperCase();
-            }
-            break;
-          }
-        }
-        if (country) result._issnCountry = country;
-      }
-    } catch (e) {
-      console.warn('[ISSN] Country fetch failed:', e);
-    }
+  // Publisher country and SJR resolved in parallel above — wire up results here
+  if (oaCountry) {
+    const isoCountryMap = {
+      'US': 'United States', 'GB': 'United Kingdom', 'DE': 'Germany',
+      'FR': 'France', 'NL': 'Netherlands', 'CH': 'Switzerland',
+      'IT': 'Italy', 'ES': 'Spain', 'SE': 'Sweden', 'DK': 'Denmark',
+      'NO': 'Norway', 'FI': 'Finland', 'BE': 'Belgium', 'AT': 'Austria',
+      'PL': 'Poland', 'CZ': 'Czech Republic', 'HU': 'Hungary',
+      'AU': 'Australia', 'NZ': 'New Zealand', 'CA': 'Canada',
+      'JP': 'Japan', 'CN': 'China', 'KR': 'South Korea', 'IN': 'India',
+      'BR': 'Brazil', 'MX': 'Mexico', 'AR': 'Argentina', 'CL': 'Chile',
+      'RU': 'Russia', 'TR': 'Turkey', 'IL': 'Israel', 'ZA': 'South Africa',
+      'SG': 'Singapore', 'MY': 'Malaysia', 'PH': 'Philippines',
+      'IE': 'Ireland', 'PT': 'Portugal', 'GR': 'Greece', 'HR': 'Croatia',
+    };
+    result._issnCountry = isoCountryMap[oaCountry] || oaCountry;
   }
-
-  // SJR lookup from local CSV - standalone, no chrome.storage dependency
-  // Test (Nature): ISSN 0028-0836 or 1476-4687 → Sourceid 22981
-  // Web: https://www.scimagojr.com/journalsearch.php?q=22981&tip=sid&clean=0#:~:text=External%20Cites%20per%20Doc
-  const lookupSJR = async (issns) => {
-    if (!issns || issns.length === 0) return null;
-    try {
-      const url = './SJR.csv';
-      const response = await fetch(url);
-      if (!response.ok) return null;
-      const csvText = await response.text();
-      const lines = csvText.split('\n');
-      const startIndex = lines[0].includes('Sourceid') || lines[0].includes('ISSN') ? 1 : 0;
-      const issnSet = new Set(issns);
-
-      for (let i = startIndex; i < lines.length; i++) {
-        const line = lines[i].trim();
-        if (!line) continue;
-        const cols = parseSJRCsvLine(line);
-        if (cols.length < 4) continue;
-        const issn1 = cols[0].trim();
-        const issn2 = cols[1].trim();
-        const sourceid = cols[2].trim();
-        const sjrValue = parseFloat(cols[3].trim().replace(',', '.'));
-        if (issnSet.has(issn1) || issnSet.has(issn2)) {
-          console.log('[SJR] Match found:', { issn1, issn2, sourceid, sjrValue, raw: cols[3] });
-          return {
-            sjr: isNaN(sjrValue) ? null : sjrValue.toFixed(2),
-            sourceid,
-            web: `https://www.scimagojr.com/journalsearch.php?q=${sourceid}&tip=sid&clean=0#:~:text=External%20Cites%20per%20Doc`,
-          };
-        }
-      }
-      return null;
-    } catch (e) {
-      console.warn('[SJR] CSV lookup failed:', e);
-      return null;
-    }
-  };
-
-  const parseSJRCsvLine = (line) => {
-    const result = [];
-    let inQuotes = false;
-    let current = '';
-    for (let i = 0; i < line.length; i++) {
-      const ch = line[i];
-      if (ch === '"') { inQuotes = !inQuotes; }
-      else if (ch === ',' && !inQuotes) { result.push(current); current = ''; }
-      else { current += ch; }
-    }
-    result.push(current);
-    return result;
-  };
-
-  const sjrResult = await lookupSJR(allIssns);
   const sjr = {
     web: sjrResult ? sjrResult.web : null,
     data: sjrResult ? sjrResult.sjr : 'N/A',
   };
-  // Attach SJR score to result for summary header quality indicator
+  // Attach SJR score and URL to result for summary header
   result._sjrScore = sjrResult ? sjrResult.sjr : null;
+  result._sjrUrl   = sjrResult ? sjrResult.web : null;
   
   // Author ORCIDs - use same source-selection logic (RA wins ties)
   const raFirstOrcidLinks = result.raFirstAuthorOrcid || null;
@@ -1111,7 +1367,7 @@ async function checkAllDOILinks(doi, result) {
   // Educational context about DOI ecosystem
   html += '<div style="margin-top: 8px; padding: 6px 8px; background: #f0f4f8; border-left: 3px solid #005a8c; font-size: 10px; color: #555; line-height: 1.5;">';
   html += 'A DOI can identify any digital object — journal articles, datasets, charts, software, or reports. ';
-  html += 'In 2025, Crossref (xx,xxx,xxx) and DataCite (xx,xxx,xxx) represented over 95% of all research DOIs.';
+  html += 'Crossref and DataCite together represent over 95% of all research DOIs.';
   html += '</div>';
   
   // =====================
@@ -1130,39 +1386,71 @@ async function checkAllDOILinks(doi, result) {
   row('OpenAIRE', openaire.web, openaire.data);
   row('Dimensions', dimensions.web, dimensions.data, '(Free Acct Required)');
 
-  // Retraction Watch - parsed from CrossRef update-to field
+  // Retraction / correction status - parsed from CrossRef update-to and updated-by fields
+  // update-to:   this DOI has been retracted/corrected (a notice DOI is listed)
+  // updated-by:  this DOI IS the notice (retraction/correction) for another article
+  // Test DOI (retracted article): 10.1016/S0140-6736(97)11096-0
+  // Test DOI (retraction notice): look up the update-to DOI of the above
   {
     const isCrossRef = result.doiOrgRa === 'Crossref';
-    let rwStatus = null;
-    let rwDoi = null;
-    if (isCrossRef && result.raUpdateTo) {
+    const UPDATE_TYPES = ['retraction', 'correction', 'expression-of-concern', 'reinstatement', 'withdrawal'];
+
+    // Parse update-to (this article was updated/retracted)
+    const parseUpdates = (raw, isNotice = false) => {
+      if (!raw) return [];
       try {
-        const updates = JSON.parse(result.raUpdateTo);
-        const rw = updates.find(u =>
-          u.source === 'retraction-watch' ||
-          (u['update-type'] && ['retraction','correction','expression-of-concern','reinstatement'].includes(u['update-type']))
-        );
-        if (rw) {
-          rwStatus = rw['update-type'] || 'retraction';
-          rwDoi    = rw.DOI || null;
-          // Capitalise first letter
-          rwStatus = rwStatus.charAt(0).toUpperCase() + rwStatus.slice(1).replace(/-/g, ' ');
+        const arr = JSON.parse(raw);
+        const map = new Map();
+        for (const u of arr) {
+          const t = (u['update-type'] || u.type || '').toLowerCase();
+          if (!UPDATE_TYPES.includes(t)) continue;
+          const key = `${(u.DOI || '').toLowerCase()}|${t}`;
+          if (!map.has(key)) {
+            map.set(key, { type: t, DOI: u.DOI || null, sources: [], recordIds: [], label: u.label || null, isNotice });
+          }
+          const entry = map.get(key);
+          if (u.source && !entry.sources.includes(u.source)) entry.sources.push(u.source);
+          if (u['record-id'] && !entry.recordIds.includes(u['record-id'])) entry.recordIds.push(u['record-id']);
         }
-      } catch (e) { /* leave null */ }
-    }
+        return [...map.values()];
+      } catch (e) { return []; }
+    };
+
+    const allUpdates = [
+      ...parseUpdates(result.raUpdateTo,  false),
+      ...parseUpdates(result.raUpdatedBy, true),
+    ];
 
     html += '<div style="margin-bottom: 4px;">';
     html += '<span style="color: #666; display: inline-block; width: 160px;">Retraction Watch:</span>';
+
     if (!isCrossRef) {
       html += '<span style="color: #999;">Not available (non-CrossRef DOI)</span>';
-    } else if (rwStatus) {
-      const rwColor = rwStatus.toLowerCase().includes('retract') ? '#cc0000' : '#e07000';
-      const rwText  = rwDoi
-        ? `<a href="https://doi.org/${rwDoi}" target="_blank" style="color:${rwColor}; font-weight:bold;">⚠ ${rwStatus}</a>`
-        : `<span style="color:${rwColor}; font-weight:bold;">⚠ ${rwStatus}</span>`;
-      html += `${rwText} <span style="color:#999; font-size:11px;">(Source: CrossRef)</span>`;
+    } else if (allUpdates.length === 0) {
+      html += '<span style="color: #333;">None found</span> <span style="color:#999; font-size:11px;">(Source: CrossRef)</span>';
     } else {
-      html += '<span style="color: #333;">None</span> <span style="color:#999; font-size:11px;">(Source: CrossRef)</span>';
+      html += '<span>';
+      allUpdates.forEach((entry, i) => {
+        if (i > 0) html += ' &nbsp;';
+        const isRetract  = entry.type === 'retraction';
+        const rwColor    = isRetract ? '#cc0000' : '#e07000';
+        const typeLabel  = (entry.label || entry.type).charAt(0).toUpperCase() + (entry.label || entry.type).slice(1).replace(/-/g, ' ');
+        const srcLabel   = entry.sources.length > 0
+          ? entry.sources.map(s => s === 'retraction-watch' ? 'RW' : s.charAt(0).toUpperCase() + s.slice(1)).join('+')
+          : 'CrossRef';
+        const rwRecordId = entry.recordIds[0] || null;
+        const rwCsvUrl   = rwRecordId ? `https://api.labs.crossref.org/data/retractionwatch?${rwRecordId}` : null;
+        const prefix     = entry.isNotice ? 'This DOI is a ' : '';
+
+        const linkText = `⚠ ${prefix}${typeLabel}`;
+        html += entry.DOI
+          ? `<a href="https://doi.org/${entry.DOI}" target="_blank" style="color:${rwColor}; font-weight:bold;">${linkText}</a>`
+          : `<span style="color:${rwColor}; font-weight:bold;">${linkText}</span>`;
+        html += ` <span style="color:#999; font-size:11px;">(${srcLabel}`;
+        if (rwCsvUrl) html += ` <a href="${rwCsvUrl}" target="_blank" style="color:#999;">#${rwRecordId}</a>`;
+        html += ')</span>';
+      });
+      html += '</span>';
     }
     html += '</div>';
   }
@@ -1204,125 +1492,6 @@ async function checkAllDOILinks(doi, result) {
   html += '</div>';
   row('OpenAlex', openalex.web, openalex.data);
   
-  // =====================
-  // Group 4: Author Metrics
-  // =====================
-  groupLabel('Author Metrics');
-
-  // Helper to build one author block
-  const authorBlock = (label, family, given, orcidId, orcidUrl) => {
-    const hasName = family || given;
-    const hasOrcid = orcidId && orcidId !== 'N/A';
-
-    // Line 1: Author name or none
-    html += '<div style="margin-bottom: 2px;">';
-    html += `<span style="color: #666; font-weight: bold;">${label}:</span> `;
-    html += hasName
-      ? `<span style="color: #333;">${given || ''} ${family || ''}</span>`
-      : '<span style="color: #ccc;">none</span>';
-    html += '</div>';
-
-    // Line 2: ORCID
-    html += '<div style="margin-bottom: 2px; margin-left: 15px;">';
-    html += '<span style="color: #666;">ORCID:</span> ';
-    if (hasOrcid) {
-      html += `<span style="color: #333; font-family: monospace;">${orcidId}</span>`;
-    } else {
-      html += '<span style="color: #ccc;">not available</span>';
-    }
-    html += '</div>';
-
-    // Line 3: PubMed | ORCID | OpenAlex links
-    html += '<div style="margin-bottom: 10px; margin-left: 15px;">';
-    if (hasOrcid) {
-      const pubmedOrcidUrl = `https://pubmed.ncbi.nlm.nih.gov/?term=${encodeURIComponent(orcidId)}[auid]`;
-      const openAlexOrcidUrl = `https://api.openalex.org/authors/orcid:${orcidId}`;
-      html += `<a href="${pubmedOrcidUrl}" target="_blank" style="color: #0066cc;">PubMed</a>`;
-      html += ' | ';
-      html += `<a href="${orcidUrl}" target="_blank" style="color: #0066cc;">ORCID</a>`;
-      html += ' | ';
-      html += `<a href="${openAlexOrcidUrl}" target="_blank" style="color: #0066cc;">OpenAlex</a>`;
-    } else {
-      html += '<span style="color: #ccc;">PubMed | ORCID | OpenAlex</span>';
-    }
-    html += '</div>';
-  };
-
-  // --- Source selection: pick the set with the most ORCIDs, RA wins ties ---
-  const isValid = v => v && v !== 'N/A';
-
-  // RA ORCID score
-  const raFirstOrcid  = result.raFirstAuthorOrcid    || null;
-  const raLastOrcid   = result.raLastAuthorOrcid     || null;
-  const raOrcidScore  = (isValid(raFirstOrcid) ? 1 : 0) + (isValid(raLastOrcid) ? 1 : 0);
-
-  // PubMed ORCID score
-  const pmFirstOrcid  = result.pubmedAuthorFirstORCID || null;
-  const pmLastOrcid   = result.pubmedAuthorLastORCID  || null;
-  const pmOrcidScore  = (isValid(pmFirstOrcid) ? 1 : 0) + (isValid(pmLastOrcid) ? 1 : 0);
-
-  // RA wins ties (richer name format)
-  const useRA = raOrcidScore >= pmOrcidScore;
-  const authorSource = useRA ? (result.doiOrgRa || 'RA') : 'PubMed';
-
-  // Author count
-  let authorCountMetrics = 0;
-  if (result.doiOrgAuthors || result.raAuthors) {
-    try {
-      const authorsData = result.doiOrgAuthors || result.raAuthors;
-      const authorsArray = typeof authorsData === 'string' ? JSON.parse(authorsData) : authorsData;
-      if (Array.isArray(authorsArray)) authorCountMetrics = authorsArray.length;
-    } catch (e) { /* leave at 0 */ }
-  }
-  // Fall back to PubMed count if RA had none
-  if (authorCountMetrics === 0 && result.pubmedAuthorCount) {
-    authorCountMetrics = parseInt(result.pubmedAuthorCount, 10) || 0;
-  }
-
-  html += '<div style="margin-bottom: 6px;">';
-  html += `<span style="color: #666;">Number of Authors:</span> <span style="color: #333;">${authorCountMetrics > 0 ? authorCountMetrics : 'unknown'}</span>`;
-  html += '</div>';
-
-  // Source label
-  html += '<div style="margin-bottom: 10px;">';
-  html += `<span style="color: #666;">Author Data Source:</span> <span style="color: #333;">${authorSource}</span>`;
-  html += '</div>';
-
-  // Resolve author fields from chosen source
-  let firstFamily, firstGiven, firstOrcidId, firstOrcidUrl;
-  let lastFamily,  lastGiven,  lastOrcidId,  lastOrcidUrl;
-
-  if (useRA) {
-    firstFamily  = result.raFirstAuthorFamily    || result.doiOrgFirstAuthorFamily || null;
-    firstGiven   = result.raFirstAuthorGiven     || result.doiOrgFirstAuthorGiven  || null;
-    firstOrcidId = result.raFirstAuthorOrcid     || result.doiOrgFirstAuthorOrcid  || null;
-    firstOrcidUrl= result.raFirstAuthorOrcidUrl  || result.doiOrgFirstAuthorOrcidUrl || null;
-    lastFamily   = result.raLastAuthorFamily     || result.doiOrgLastAuthorFamily  || null;
-    lastGiven    = result.raLastAuthorGiven      || result.doiOrgLastAuthorGiven   || null;
-    lastOrcidId  = result.raLastAuthorOrcid      || result.doiOrgLastAuthorOrcid   || null;
-    lastOrcidUrl = result.raLastAuthorOrcidUrl   || result.doiOrgLastAuthorOrcidUrl || null;
-  } else {
-    // PubMed names are in "Family GI" format - use as-is for given, null for family
-    firstFamily  = null;
-    firstGiven   = result.pubmedAuthorFirst      || null;
-    firstOrcidId = result.pubmedAuthorFirstORCID || null;
-    firstOrcidUrl= firstOrcidId ? `https://orcid.org/${firstOrcidId}` : null;
-    lastFamily   = null;
-    lastGiven    = result.pubmedAuthorLast       || null;
-    lastOrcidId  = result.pubmedAuthorLastORCID  || null;
-    lastOrcidUrl = lastOrcidId ? `https://orcid.org/${lastOrcidId}` : null;
-  }
-
-  // First Author block - always shown
-  authorBlock('First Author', firstFamily, firstGiven, firstOrcidId, firstOrcidUrl);
-
-  // Last Author block - always shown, "none" if single author
-  if (authorCountMetrics > 1) {
-    authorBlock('Last Author', lastFamily, lastGiven, lastOrcidId, lastOrcidUrl);
-  } else {
-    authorBlock('Last Author', null, null, null, null);
-  }
-  
   return html;
 }
 
@@ -1360,25 +1529,40 @@ async function checkOpenAlex(doi, result) {
     const response = await fetch(apiUrl);
     if (!response.ok) return { web: null, data: null };
     const data = await response.json();
-    if (result) result._openAlexCitations = data.cited_by_count ?? null;
+    if (result) {
+      result._openAlexCitations = data.cited_by_count ?? null;
+
+      // Extract first/last author ORCIDs from authorships array
+      // Each authorship: { author: { id, display_name, orcid }, author_position, ... }
+      const authorships = data.authorships || [];
+      if (authorships.length > 0) {
+        const first = authorships[0].author;
+        const last  = authorships[authorships.length - 1].author;
+        // OpenAlex returns full ORCID URL e.g. "https://orcid.org/0000-0001-5485-7727"
+        result._oaFirstAuthorOrcid = first?.orcid ? first.orcid.replace('https://orcid.org/', '') : null;
+        result._oaLastAuthorOrcid  = last?.orcid  ? last.orcid.replace('https://orcid.org/', '')  : null;
+        result._oaFirstAuthorName  = first?.display_name || null;
+        result._oaLastAuthorName   = last?.display_name  || null;
+      }
+    }
     return { web: webUrl, data: apiUrl };
   } catch (error) {
     return { web: null, data: null };
   }
 }
 
-// Test: https://api.semanticscholar.org/graph/v1/paper/DOI:10.1016/S0140-6736(24)02679-5?fields=title,citationCount
+// Test: https://api.semanticscholar.org/graph/v1/paper/DOI:10.1016/S0140-6736(24)02679-5?fields=citationCount,influentialCitationCount,url
 async function checkSemanticScholar(doi, result) {
-  const fields = 'title,abstract,year,publicationDate,url,citationCount,referenceCount,influentialCitationCount,authors.name,authors.affiliations,authors.hIndex,authors.externalIds,venue,journal,openAccessPdf';
+  const fields = 'citationCount,influentialCitationCount,url';
   const apiUrl = `https://api.semanticscholar.org/graph/v1/paper/DOI:${doi}?fields=${fields}`;
   try {
     const response = await fetch(apiUrl);
     if (response.ok) {
       const data = await response.json();
-    if (result) {
-      result._semSchCitations = data.citationCount ?? null;
-      result._semSchInfluential = data.influentialCitationCount ?? null;
-    }
+      if (result) {
+        result._semSchCitations   = data.citationCount ?? null;
+        result._semSchInfluential = data.influentialCitationCount ?? null;
+      }
       const webUrl = data.url || null;
       return { web: webUrl, data: apiUrl };
     }
@@ -1388,19 +1572,31 @@ async function checkSemanticScholar(doi, result) {
   }
 }
 
-// Test: https://api.unpaywall.org/v2/10.1016/S0140-6736(24)02679-5?email=tomlaheyh@gmail.com
+// Test: https://api.unpaywall.org/v2/10.1016/S0140-6736(24)02679-5?email=pubmedcitationbar@gmail.com
 async function checkUnpaywall(doi, result) {
-  const apiUrl = `https://api.unpaywall.org/v2/${doi}?email=tomlaheyh@gmail.com`;
+  const UNPAYWALL_EMAIL = 'pubmedcitationbar@gmail.com'; // TODO: replace with dedicated app email
+  const apiUrl = `https://api.unpaywall.org/v2/${doi}?email=${UNPAYWALL_EMAIL}`;
   const webUrl = 'https://unpaywall.org/products/simple-query-tool';
   try {
     const response = await fetch(apiUrl);
     if (!response.ok) return { web: null, data: null };
     const data = await response.json();
-    // Extract free access info from best_oa_location
-    const loc = data.best_oa_location || null;
-    if (loc && result) {
-      result._oaFreeText = loc.url || null;
-      result._oaFreePdf  = loc.url_for_pdf || null;
+
+    // PMC is set before this runs and takes priority - only fill in if not already set
+    if (data.is_oa && result && !result._oaFreePdf) {
+      const loc = data.best_oa_location || null;
+      if (loc) {
+        if (loc.url_for_pdf) {
+          result._oaFreePdf = loc.url_for_pdf;
+          result._oaLabel   = (loc.version === 'publishedVersion') ? 'Free PDF' : 'Free Manuscript';
+        } else if (loc.host_type === 'repository' && loc.url) {
+          // Repository landing page with no direct PDF link
+          result._oaFreePdf = loc.url;
+          result._oaLabel   = (loc.version === 'publishedVersion') ? 'Free PDF' : 'Free Manuscript';
+        }
+      }
+      console.log('[Unpaywall] is_oa:', data.is_oa, '| host_type:', loc?.host_type,
+        '| url_for_pdf:', loc?.url_for_pdf || 'none', '| label:', result._oaLabel || 'none');
     }
     return { web: webUrl, data: apiUrl };
   } catch (error) {
@@ -1538,11 +1734,5 @@ async function checkICite(pmid, result) {
   }
 }
 
-// Test: https://app.dimensions.ai/discover/publication?search_text=10.1038/s41586-025-09227-0
-async function checkDimensions(doi) {
-  return {
-    web: `https://app.dimensions.ai/discover/publication?search_text=${encodeURIComponent(doi)}`,
-    data: null,
-  };
-}
+
 

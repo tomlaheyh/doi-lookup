@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>DOI Lookup</title>
+  <title>Awesome DOI Lookup</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;600&family=IBM+Plex+Sans:wght@300;400;500&display=swap" rel="stylesheet">
   <style>
@@ -27,40 +27,40 @@
       font-family: var(--sans);
       font-weight: 300;
       min-height: 100vh;
-      padding: 0 16px 60px;
+      padding: 0 16px 40px;
     }
 
     header {
       max-width: 1400px;
       margin: 0 auto;
-      padding: 48px 0 32px;
+      padding: 20px 0 14px;
       border-bottom: 2px solid var(--text);
-      margin-bottom: 40px;
+      margin-bottom: 20px;
     }
 
     header h1 {
       font-family: var(--mono);
-      font-size: 28px;
+      font-size: 22px;
       font-weight: 600;
       letter-spacing: -0.5px;
       color: var(--text);
     }
 
     header p {
-      margin-top: 8px;
-      font-size: 14px;
+      margin-top: 4px;
+      font-size: 13px;
       color: var(--muted);
       font-weight: 300;
     }
 
     .lookup-box {
       max-width: 1400px;
-      margin: 0 auto 40px;
+      margin: 0 auto 16px;
       display: flex;
       gap: 10px;
     }
 
-    .lookup-box input {
+    .lookup-box textarea {
       flex: 1;
       font-family: var(--mono);
       font-size: 14px;
@@ -70,15 +70,36 @@
       color: var(--text);
       outline: none;
       transition: border-color 0.15s;
+      resize: none;
+      height: 80px;
+      line-height: 1.5;
+      overflow-y: auto;
     }
 
-    .lookup-box input:focus {
+    .lookup-box textarea:focus {
       border-color: var(--accent);
     }
 
-    .lookup-box input::placeholder {
+    .lookup-box textarea::placeholder {
       color: var(--muted);
     }
+
+    /* Export CSV button */
+    #exportBtn {
+      display: none;
+      font-family: var(--mono);
+      font-size: 13px;
+      font-weight: 600;
+      padding: 8px 18px;
+      background: #2a7a2a;
+      color: #fff;
+      border: none;
+      cursor: pointer;
+      letter-spacing: 0.5px;
+      white-space: nowrap;
+    }
+    #exportBtn:hover { background: #1e5c1e; }
+    #exportBtn:disabled { background: var(--muted); cursor: not-allowed; }
 
     .lookup-box button {
       font-family: var(--mono);
@@ -185,18 +206,20 @@
 <body>
 
   <header>
-    <h1>DOI Lookup</h1>
-    <p>Enter a DOI to retrieve article metadata, metrics, author information and external links.</p>
+    <h1>Awesome DOI Lookup</h1>
+    <p>Enter a DOI (up to 10, separated by commas) to retrieve article metadata, metrics, author information and external links.</p>
   </header>
 
   <div class="lookup-box">
-    <input type="text" id="doiInput"
-      placeholder="e.g. 10.1038/s41586-025-09227-0"
-      autocomplete="off" spellcheck="false" />
+    <textarea id="doiInput"
+      placeholder="e.g. 10.1038/s41586-025-09227-0  — separate multiple DOIs with commas (up to 10)"
+      autocomplete="off" spellcheck="false"></textarea>
     <button id="lookupBtn" onclick="runLookup()">Look Up</button>
   </div>
-
-  <div id="status"></div>
+  <div style="max-width:1400px; margin: 0 auto 8px; display:flex; align-items:center; gap:16px;">
+    <button id="exportBtn" onclick="exportCSV()">Export CSV</button>
+    <div id="status"></div>
+  </div>
   <div id="results"></div>
 
   <footer>
@@ -208,14 +231,21 @@
   <script src="pubmedLookup-nonmodule.js"></script>
   <script src="lookup.js"></script>
   <script>
-    const input  = document.getElementById('doiInput');
-    const btn    = document.getElementById('lookupBtn');
-    const status = document.getElementById('status');
+    const input   = document.getElementById('doiInput');
+    const btn     = document.getElementById('lookupBtn');
+    const status  = document.getElementById('status');
     const results = document.getElementById('results');
+    const exportBtn = document.getElementById('exportBtn');
 
-    // Allow Enter key to trigger lookup
+    // Store all result data objects for CSV export
+    let _allResults = [];
+
+    // Enter = submit, Shift+Enter = newline
     input.addEventListener('keydown', e => {
-      if (e.key === 'Enter') runLookup();
+      if (e.key === 'Enter' && !e.shiftKey) {
+        e.preventDefault();
+        runLookup();
+      }
     });
 
     // Check for ?doi= query parameter on page load
@@ -230,40 +260,127 @@
 
     async function runLookup() {
       const raw = input.value.trim();
-      if (!raw) {
-        setStatus('Please enter a DOI.', true);
-        return;
-      }
+      if (!raw) { setStatus('Please enter a DOI.', true); return; }
 
-      // Update URL so it's shareable and scriptable
-      const cleanDoi = raw.replace(/^https?:\/\/doi\.org\//i, '').trim();
-      history.replaceState(null, '', `?doi=${encodeURIComponent(cleanDoi)}`);
+      // Parse comma-separated DOIs, strip whitespace, dedupe, cap at 10
+      const dois = [...new Set(
+        raw.split(',')
+           .map(d => d.trim())
+           .filter(Boolean)
+      )].slice(0, 10);
+
+      if (dois.length === 0) { setStatus('Please enter a valid DOI.', true); return; }
+
+      // Update URL (first DOI only for shareability)
+      const cleanFirst = dois[0].replace(/^https?:\/\/doi\.org\//i, '').trim();
+      history.replaceState(null, '', `?doi=${encodeURIComponent(cleanFirst)}`);
 
       btn.disabled = true;
       results.innerHTML = '';
-      setStatus('<span class="spinner"></span>Looking up DOI — this may take 10–20 seconds while checking all sources…');
+      exportBtn.style.display = 'none';
+      _allResults = [];
 
-      try {
-        await handleDOILookup(raw);
-        setStatus('');
-      } catch (err) {
-        setStatus('Lookup failed: ' + err.message, true);
-        console.error(err);
-      } finally {
-        btn.disabled = false;
+      const total = dois.length;
+      let completed = 0;
+
+      for (const doi of dois) {
+        setStatus(`<span class="spinner"></span>Looking up ${completed + 1} of ${total}: ${doi}`);
+        try {
+          await handleDOILookup(doi);
+        } catch (err) {
+          // Show error card for this DOI but continue with the rest
+          const errDiv = document.createElement('div');
+          errDiv.style.cssText = 'background:white; padding:25px; border:1.5px solid #d8d5cc; margin-bottom:16px; color:red;';
+          errDiv.textContent = `Error looking up ${doi}: ${err.message}`;
+          results.appendChild(errDiv);
+          console.error(err);
+        }
+        completed++;
       }
+
+      setStatus(total > 1 ? `${completed} of ${total} DOIs looked up.` : '');
+      btn.disabled = false;
+
+      // Show export button if we have results
+      if (_allResults.length > 0) {
+        updateExportBtn();
+        exportBtn.style.display = 'block';
+      }
+    }
+
+    function updateExportBtn() {
+      const checked = _allResults.filter(r => r._checked !== false).length;
+      const total   = _allResults.length;
+      exportBtn.disabled = checked === 0;
+      exportBtn.textContent = `Export CSV (${checked} of ${total})`;
+    }
+
+    function onCardCheckChange(doi, checked) {
+      const r = _allResults.find(r => r._doi === doi);
+      if (r) r._checked = checked;
+      // Grey out the card
+      const card = document.getElementById(`card-${CSS.escape(doi)}`);
+      if (card) card.style.opacity = checked ? '1' : '0.35';
+      updateExportBtn();
+    }
+
+    function exportCSV() {
+      const selected = _allResults.filter(r => r._checked !== false);
+      if (selected.length === 0) return;
+
+      const cols = [
+        'DOI','Title','Journal','Publisher','Year','Volume','Issue','Pages','Type','ISSN',
+        'First Author','First Author ORCID','Last Author','Last Author ORCID',
+        'Citations (CrossRef)','Citations (OpenAlex)','Citations (Sem Sch)','RCR','SJR',
+        'DOAJ','PubMed','Free PDF URL'
+      ];
+
+      const escape = v => {
+        if (v === null || v === undefined) return '';
+        const s = String(v);
+        return s.includes(',') || s.includes('\"') || s.includes('\n')
+          ? `"${s.replace(/"/g, '""')}"` : s;
+      };
+
+      const rows = selected.map(r => [
+        r.doiOrgDoi || r._doi || '',
+        r.doiOrgTitle || r.raTitle || '',
+        r.doiOrgJournal || r.raJournal || '',
+        r.doiOrgPublisher || r.raPublisher || '',
+        r.doiOrgPublishedDate || r.raPublishedOnline || r.raIssued || '',
+        r.doiOrgVolume || r.raVolume || '',
+        r.doiOrgIssue || r.raIssue || '',
+        r.doiOrgPages || r.raPage || '',
+        r.doiOrgType || r.raType || '',
+        r.doiOrgIssn || r.raIssn || '',
+        r._displayFirstAuthorName || '',
+        r._displayFirstAuthorOrcid || '',
+        r._displayLastAuthorName || '',
+        r._displayLastAuthorOrcid || '',
+        r.doiOrgCitationCount ?? r.raCitationCount ?? '',
+        r._openAlexCitations ?? '',
+        r._semSchCitations ?? '',
+        r._iciteRcr ?? '',
+        r._sjrScore || '',
+        r._doajFound === true ? 'Yes' : r._doajFound === false ? 'No' : '',
+        r.pubmedFound === true ? 'Yes' : r.pubmedFound === false ? 'No' : '',
+        r._oaFreePdf || '',
+      ].map(escape).join(','));
+
+      const csv = [cols.join(','), ...rows].join('\n');
+      const blob = new Blob([csv], { type: 'text/csv' });
+      const url  = URL.createObjectURL(blob);
+      const a    = document.createElement('a');
+      a.href     = url;
+      a.download = `doi-lookup-${new Date().toISOString().slice(0,10)}.csv`;
+      a.click();
+      URL.revokeObjectURL(url);
     }
 
     function setStatus(msg, isError = false) {
       status.innerHTML = msg;
       status.className = isError ? 'error' : '';
     }
-
-    // Override showDOIModal to render inline instead of as a popup
-    const _originalShowDOIModal = typeof showDOIModal === 'function' ? showDOIModal : null;
-    window.renderDOIResults = function(html) {
-      results.innerHTML = html;
-    };
   </script>
 </body>
 </html>
