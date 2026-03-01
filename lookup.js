@@ -123,6 +123,7 @@ function extractDOI(text) {
 // ============================================================================
 const CACHE_PREFIX = 'doi_cache_';
 const CACHE_TTL_MS = 24 * 60 * 60 * 1000; // 24 hours
+const CACHE_MAX    = 20;                   // Keep at most 20 cached DOIs
 
 function _cacheGet(doi) {
   try {
@@ -148,8 +149,35 @@ function _cacheSet(doi, data, linksHtml) {
       linksHtml
     }));
     console.log(`[Cache] SET for ${doi}`);
+    _cacheEvict();
   } catch (e) {
     console.warn('[Cache] Failed to write:', e);
+  }
+}
+
+// Remove oldest cache entries when count exceeds CACHE_MAX
+function _cacheEvict() {
+  try {
+    const entries = [];
+    for (let i = 0; i < localStorage.length; i++) {
+      const key = localStorage.key(i);
+      if (!key.startsWith(CACHE_PREFIX)) continue;
+      try {
+        const { ts } = JSON.parse(localStorage.getItem(key));
+        entries.push({ key, ts });
+      } catch (e) {
+        // Corrupt entry — remove it
+        localStorage.removeItem(key);
+      }
+    }
+    if (entries.length <= CACHE_MAX) return;
+    // Sort newest first, remove the rest
+    entries.sort((a, b) => b.ts - a.ts);
+    const toRemove = entries.slice(CACHE_MAX);
+    toRemove.forEach(e => localStorage.removeItem(e.key));
+    console.log(`[Cache] Evicted ${toRemove.length} old entries (kept ${CACHE_MAX})`);
+  } catch (e) {
+    console.warn('[Cache] Eviction error:', e);
   }
 }
 
@@ -337,29 +365,44 @@ function showDOIModal(result, linksHtml) {
   const qualityBorder = sjrScore >= 3   ? '#82c882' : sjrScore >= 0.8 ? '#e6c84a' : '#ccc';
   const qualityText   = sjrScore >= 3   ? '#2d6a2d' : sjrScore >= 0.8 ? '#7a5c00' : '#666';
 
-  // Source selection: pick set with most ORCIDs, RA wins ties
+  // Source selection: pick set with most ORCIDs — RA wins ties, OpenAlex included
   const isValidTop = v => v && v !== 'N/A';
   const raFirstOrcidTop  = result.raFirstAuthorOrcid  || null;
   const raLastOrcidTop   = result.raLastAuthorOrcid   || null;
   const pmFirstOrcidTop  = result.pubmedAuthorFirstORCID || null;
   const pmLastOrcidTop   = result.pubmedAuthorLastORCID  || null;
+  const oaFirstOrcidTop  = result._oaFirstAuthorOrcid || null;
+  const oaLastOrcidTop   = result._oaLastAuthorOrcid  || null;
   const raScoreTop = (isValidTop(raFirstOrcidTop) ? 1 : 0) + (isValidTop(raLastOrcidTop) ? 1 : 0);
   const pmScoreTop = (isValidTop(pmFirstOrcidTop) ? 1 : 0) + (isValidTop(pmLastOrcidTop) ? 1 : 0);
-  const useRATop = raScoreTop >= pmScoreTop;
-  const authorSourceTop = useRATop ? (result.doiOrgRa || 'RA') : 'PubMed';
+  const oaScoreTop = (isValidTop(oaFirstOrcidTop) ? 1 : 0) + (isValidTop(oaLastOrcidTop) ? 1 : 0);
+  // Pick source: RA wins ties with PubMed; OpenAlex wins only if it has strictly more ORCIDs
+  const bestScore = Math.max(raScoreTop, pmScoreTop, oaScoreTop);
+  const useOATop = oaScoreTop === bestScore && oaScoreTop > raScoreTop && oaScoreTop > pmScoreTop;
+  const useRATop = !useOATop && raScoreTop >= pmScoreTop;
+  const authorSourceTop = useOATop ? 'OpenAlex' : useRATop ? (result.doiOrgRa || 'RA') : 'PubMed';
 
   // Resolve fields from chosen source
-  const topFirstFamily  = useRATop ? (result.raFirstAuthorFamily || result.doiOrgFirstAuthorFamily) : null;
-  const topFirstGiven   = useRATop ? (result.raFirstAuthorGiven  || result.doiOrgFirstAuthorGiven)  : (result.pubmedAuthorFirst || null);
-  const topFirstOrcid   = useRATop ? (result.raFirstAuthorOrcid  || result.doiOrgFirstAuthorOrcid)  : (result.pubmedAuthorFirstORCID || null);
-  const topFirstOrcidUrl= useRATop ? (result.raFirstAuthorOrcidUrl || result.doiOrgFirstAuthorOrcidUrl) : (topFirstOrcid ? `https://orcid.org/${topFirstOrcid}` : null);
-  const topFirstAffRaw  = useRATop ? (result.raFirstAuthorAffiliation || result.doiOrgFirstAuthorAffiliation) : null;
+  const topFirstFamily  = useOATop ? null : useRATop ? (result.raFirstAuthorFamily || result.doiOrgFirstAuthorFamily) : null;
+  const topFirstGiven   = useOATop ? (result._oaFirstAuthorName || null) : useRATop ? (result.raFirstAuthorGiven  || result.doiOrgFirstAuthorGiven)  : (result.pubmedAuthorFirst || null);
+  let   topFirstOrcid   = useOATop ? oaFirstOrcidTop : useRATop ? (result.raFirstAuthorOrcid  || result.doiOrgFirstAuthorOrcid)  : (result.pubmedAuthorFirstORCID || null);
+  let   topFirstOrcidUrl= null;
 
-  const topLastFamily   = useRATop ? (result.raLastAuthorFamily  || result.doiOrgLastAuthorFamily)  : null;
-  const topLastGiven    = useRATop ? (result.raLastAuthorGiven   || result.doiOrgLastAuthorGiven)   : (result.pubmedAuthorLast || null);
-  const topLastOrcid    = useRATop ? (result.raLastAuthorOrcid   || result.doiOrgLastAuthorOrcid)   : (result.pubmedAuthorLastORCID || null);
-  const topLastOrcidUrl = useRATop ? (result.raLastAuthorOrcidUrl || result.doiOrgLastAuthorOrcidUrl) : (topLastOrcid ? `https://orcid.org/${topLastOrcid}` : null);
-  const topLastAffRaw   = useRATop ? (result.raLastAuthorAffiliation || result.doiOrgLastAuthorAffiliation) : null;
+  const topLastFamily   = useOATop ? null : useRATop ? (result.raLastAuthorFamily  || result.doiOrgLastAuthorFamily)  : null;
+  const topLastGiven    = useOATop ? (result._oaLastAuthorName || null) : useRATop ? (result.raLastAuthorGiven   || result.doiOrgLastAuthorGiven)   : (result.pubmedAuthorLast || null);
+  let   topLastOrcid    = useOATop ? oaLastOrcidTop : useRATop ? (result.raLastAuthorOrcid   || result.doiOrgLastAuthorOrcid)   : (result.pubmedAuthorLastORCID || null);
+  let   topLastOrcidUrl = null;
+
+  const topFirstAffRaw  = useOATop ? null : useRATop ? (result.raFirstAuthorAffiliation || result.doiOrgFirstAuthorAffiliation) : null;
+  const topLastAffRaw   = useOATop ? null : useRATop ? (result.raLastAuthorAffiliation || result.doiOrgLastAuthorAffiliation) : null;
+
+  // Fall back to OpenAlex ORCIDs when the chosen source doesn't have them
+  if (!isValidTop(topFirstOrcid) && isValidTop(oaFirstOrcidTop)) topFirstOrcid = oaFirstOrcidTop;
+  if (!isValidTop(topLastOrcid)  && isValidTop(oaLastOrcidTop))  topLastOrcid  = oaLastOrcidTop;
+
+  // Build ORCID URLs from resolved IDs
+  topFirstOrcidUrl = isValidTop(topFirstOrcid) ? `https://orcid.org/${topFirstOrcid}` : null;
+  topLastOrcidUrl  = isValidTop(topLastOrcid)  ? `https://orcid.org/${topLastOrcid}`  : null;
 
   // Author count
   let authorCountTop = 0;
@@ -601,22 +644,42 @@ function showDOIModal(result, linksHtml) {
     html += '</div>';
   }
 
-  // Citations from all sources on one line
-  const citeParts = [];
-  const citationCount = result.doiOrgCitationCount ?? result.raCitationCount ?? null;
-  if (citationCount !== null) citeParts.push(`CrossRef: ${citationCount}`);
-  if (result._openAlexCitations !== null && result._openAlexCitations !== undefined) citeParts.push(`OpenAlex: ${result._openAlexCitations}`);
-  if (result._semSchCitations  !== null && result._semSchCitations  !== undefined) {
-    let semSchStr = `Sem Sch: ${result._semSchCitations}`;
-    if (result._semSchInfluential !== null && result._semSchInfluential !== undefined) {
-      semSchStr += ` (${result._semSchInfluential} influential)`;
-    }
-    citeParts.push(semSchStr);
-  }
-  if (result._iciteCitations   !== null && result._iciteCitations   !== undefined) citeParts.push(`iCite: ${result._iciteCitations}`);
-  if (result._iciteRcr         !== null && result._iciteRcr         !== undefined) citeParts.push(`RCR: ${result._iciteRcr}`);
-  if (citeParts.length > 0) {
-    html += `<div style="color: #555; font-size: 17px; font-weight: bold; margin-bottom: 6px;">Citations &mdash; ${citeParts.join(' &nbsp;|&nbsp; ')}</div>`;
+  // Citations from all sources on one line — always show all five items
+  {
+    const crossRefCites = result.doiOrgCitationCount ?? result.raCitationCount ?? null;
+    const oaCites       = result._openAlexCitations ?? null;
+    const ssCites       = result._semSchCitations ?? null;
+    const ssInfluential = result._semSchInfluential ?? null;
+    const iciteCites    = result._iciteCitations ?? null;
+    const rcr           = result._iciteRcr ?? null;
+    const ssUrl         = result._semSchUrl || null;
+    const iciteUrl      = result._iciteUrl || null;
+
+    let semSchLabel = ssCites !== null ? String(ssCites) : 'N/A';
+    if (ssCites !== null && ssInfluential !== null) semSchLabel += ` (${ssInfluential} influential)`;
+    const semSchHtml = ssUrl
+      ? `<a href="${ssUrl}" target="_blank" style="color: #005a8c;">Sem Sch: ${semSchLabel}</a>`
+      : `Sem Sch: ${semSchLabel}`;
+
+    const iciteLabel = iciteCites !== null ? String(iciteCites) : 'N/A';
+    const iciteHtml = iciteUrl
+      ? `<a href="${iciteUrl}" target="_blank" style="color: #005a8c;">iCite: ${iciteLabel}</a>`
+      : `iCite: ${iciteLabel}`;
+
+    const rcrLabel = rcr !== null ? String(rcr) : 'N/A';
+    const rcrHtml = iciteUrl
+      ? `<a href="${iciteUrl}" target="_blank" style="color: #005a8c;">RCR: ${rcrLabel}</a>`
+      : `RCR: ${rcrLabel}`;
+
+    const parts = [
+      `CrossRef: ${crossRefCites !== null ? crossRefCites : 'N/A'}`,
+      `OpenAlex: ${oaCites !== null ? oaCites : 'N/A'}`,
+      semSchHtml,
+      iciteHtml,
+      rcrHtml,
+    ];
+
+    html += `<div style="color: #555; font-size: 17px; font-weight: bold; margin-bottom: 6px;">Citations &mdash; ${parts.join(' &nbsp;|&nbsp; ')}</div>`;
   }
 
   // ---- Grants: PubMed first, fall back to OpenAlex ----
@@ -724,10 +787,14 @@ function showDOIModal(result, linksHtml) {
       pmLine += ` &nbsp;|&nbsp; Medline: ${result.pubmedIsMedline ? 'Yes' : 'No'}`;
       pmLine += ` &nbsp;|&nbsp; Preprint: ${result.pubmedIsPreprint ? 'Yes' : 'No'}`;
       if (result._iciteCitations !== null && result._iciteCitations !== undefined) {
-        pmLine += ` &nbsp;|&nbsp; iCite Citations: ${result._iciteCitations}`;
+        pmLine += result._iciteUrl
+          ? ` &nbsp;|&nbsp; <a href="${result._iciteUrl}" target="_blank" style="color: #005a8c;">iCite Citations: ${result._iciteCitations}</a>`
+          : ` &nbsp;|&nbsp; iCite Citations: ${result._iciteCitations}`;
       }
       if (result._iciteRcr !== null && result._iciteRcr !== undefined) {
-        pmLine += ` &nbsp;|&nbsp; RCR: ${result._iciteRcr}`;
+        pmLine += result._iciteUrl
+          ? ` &nbsp;|&nbsp; <a href="${result._iciteUrl}" target="_blank" style="color: #005a8c;">RCR: ${result._iciteRcr}</a>`
+          : ` &nbsp;|&nbsp; RCR: ${result._iciteRcr}`;
       }
       html += `<div style="color: #555; font-size: 17px; font-weight: bold; margin-bottom: 6px;">${pmLine}</div>`;
     }
@@ -1071,6 +1138,7 @@ function showDOIModal(result, linksHtml) {
   result._displayFirstAuthorOrcid = topFirstOrcid || null;
   result._displayLastAuthorName   = [topLastGiven,  topLastFamily ].filter(Boolean).join(' ') || null;
   result._displayLastAuthorOrcid  = topLastOrcid  || null;
+  result._displayAuthorCount      = authorCountTop || 0;
 
   // Render inline into #results div - append card for each DOI (multi-DOI support)
   const resultsDiv = document.getElementById('results');
@@ -1277,6 +1345,8 @@ async function checkAllDOILinks(doi, result) {
   // Attach SJR score and URL to result for summary header
   result._sjrScore = sjrResult ? sjrResult.sjr : null;
   result._sjrUrl   = sjrResult ? sjrResult.web : null;
+  // Attach Semantic Scholar web URL to result for citation link
+  result._semSchUrl = semanticscholar.web || null;
   
   // Author ORCIDs - use same source-selection logic (RA wins ties)
   const raFirstOrcidLinks = result.raFirstAuthorOrcid || null;
@@ -1833,7 +1903,7 @@ async function checkOpenAIRE(doi, result) {
 async function checkICite(pmid, result) {
   if (!pmid) return { web: null, data: null };
   const dataUrl = `https://icite.od.nih.gov/api/pubs?pmids=${pmid}`;
-  const webUrl  = `https://icite.od.nih.gov/analysis?pmids=${pmid}`;
+  const fallbackWebUrl = `https://icite.od.nih.gov/analysis?pmids=${pmid}`;
   try {
     const dataResp = await fetch(dataUrl);
     if (dataResp.ok && result) {
@@ -1846,9 +1916,40 @@ async function checkICite(pmid, result) {
           : null;
       }
     }
+
+    // Get the real results URL via store-search POST
+    let webUrl = fallbackWebUrl;
+    try {
+      const searchResp = await fetch('https://icite.od.nih.gov/iciterest/store-search', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          userType: 'app',
+          searchType: 'List of PMIDs input',
+          searchRequest: {
+            pubmedQueryStr: '',
+            uploadedFileName: '',
+            pmids: [pmid],
+            activeTab: 'infl',
+            papersSearch: '',
+            filters: []
+          }
+        })
+      });
+      if (searchResp.ok) {
+        const searchData = await searchResp.json();
+        if (searchData.id) {
+          webUrl = `https://icite.od.nih.gov/results?searchId=${searchData.id}`;
+        }
+      }
+    } catch (e) {
+      console.warn('[iCite] store-search failed (non-fatal):', e.message);
+    }
+
+    if (result) result._iciteUrl = webUrl;
     return { web: webUrl, data: dataUrl };
   } catch (error) {
-    return { web: null, data: dataUrl };
+    return { web: fallbackWebUrl, data: dataUrl };
   }
 }
 

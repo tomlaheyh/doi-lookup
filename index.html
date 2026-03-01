@@ -227,12 +227,12 @@
 
   <header>
     <h1>Awesome DOI Lookup</h1>
-    <p>Enter a DOI (up to 10, separated by commas) to retrieve article metadata, metrics, author information and external links.</p>
+    <p>Enter a DOI (up to 10, separated by commas), a single ISSN, ORCID, or PMID to retrieve article metadata, metrics, author information and external links.</p>
   </header>
 
   <div class="lookup-box">
     <textarea id="doiInput"
-      placeholder="e.g. 10.1038/s41586-025-09227-0  — separate multiple DOIs with commas (up to 10)"
+      placeholder="e.g. 10.1038/s41586-025-09227-0 — DOIs (comma-separated, up to 10), ISSN, ORCID, or PMID"
       autocomplete="off" spellcheck="false"></textarea>
     <button id="lookupBtn" onclick="runLookup()">Look Up</button>
   </div>
@@ -280,22 +280,98 @@
       }
     });
 
+    // Input pattern helpers
+    const ORCID_RE  = /^\d{4}-\d{4}-\d{4}-\d{3}[\dX]$/i;
+    const ISSN_RE   = /^\d{4}-\d{3}[\dX]$/i;
+    const PMID_RE   = /^\d{1,9}$/;
+    const DOI_RE    = /^10\.\d{4,}\/\S+$/i;
+    const DOI_URL_RE = /^https?:\/\/(dx\.)?doi\.org\/(10\.\d{4,}\/\S+)$/i;
+    const ORCID_URL_RE = /^https?:\/\/orcid\.org\/(\d{4}-\d{4}-\d{4}-\d{3}[\dX])$/i;
+
+    function extractCleanDoi(s) {
+      const urlMatch = s.match(DOI_URL_RE);
+      if (urlMatch) return urlMatch[2];
+      if (DOI_RE.test(s)) return s;
+      return null;
+    }
+
+    function extractOrcid(s) {
+      const urlMatch = s.match(ORCID_URL_RE);
+      if (urlMatch) return urlMatch[1];
+      if (ORCID_RE.test(s)) return s;
+      return null;
+    }
+
+    function extractIssn(s) {
+      // Strip common prefixes like "ISSN " or "ISSN:"
+      const cleaned = s.replace(/^issn[:\s]+/i, '').trim();
+      if (ISSN_RE.test(cleaned)) return cleaned.toUpperCase();
+      return null;
+    }
+
+    function extractPmid(s) {
+      // Strip common prefixes like "PMID " or "PMID:"
+      const cleaned = s.replace(/^pmid[:\s]+/i, '').trim();
+      if (PMID_RE.test(cleaned)) return cleaned;
+      return null;
+    }
+
     async function runLookup() {
       const raw = input.value.trim();
-      if (!raw) { setStatus('Please enter a DOI.', true); return; }
+      if (!raw) {
+        setStatus('Please enter DOIs (comma-separated), a single ISSN, ORCID, or PMID.', true);
+        return;
+      }
+
+      // Check for ORCID (single input only)
+      const orcid = extractOrcid(raw);
+      if (orcid) {
+        setStatus('Opening ORCID profile...');
+        window.open(`https://orcid.org/${orcid}`, '_blank');
+        return;
+      }
+
+      // Check for ISSN (single input only)
+      const issn = extractIssn(raw);
+      if (issn) {
+        setStatus('Opening ISSN portal...');
+        window.open(`https://portal.issn.org/resource/ISSN/${issn}`, '_blank');
+        return;
+      }
+
+      // Check for PMID (single input only — pure digits)
+      const pmid = extractPmid(raw);
+      if (pmid) {
+        setStatus('Opening PubMed...');
+        window.open(`https://pubmed.ncbi.nlm.nih.gov/${pmid}/`, '_blank');
+        return;
+      }
 
       // Parse comma-separated DOIs, strip whitespace, dedupe, cap at 10
-      const dois = [...new Set(
+      const entries = [...new Set(
         raw.split(',')
            .map(d => d.trim())
            .filter(Boolean)
       )].slice(0, 10);
 
-      if (dois.length === 0) { setStatus('Please enter a valid DOI.', true); return; }
+      if (entries.length === 0) {
+        setStatus('Please enter DOIs (comma-separated), a single ISSN, ORCID, or PMID.', true);
+        return;
+      }
+
+      // Validate every entry is a DOI
+      const dois = [];
+      for (const entry of entries) {
+        const clean = extractCleanDoi(entry);
+        if (!clean) {
+          setStatus('Please enter DOIs (comma-separated), a single ISSN, ORCID, or PMID.', true);
+          return;
+        }
+        dois.push(clean);
+      }
 
       // Update URL with all DOIs for shareability
-      const cleanDois = dois.map(d => d.replace(/^https?:\/\/doi\.org\//i, '').trim());
-      history.replaceState(null, '', `?doi=${encodeURIComponent(cleanDois.join(','))}`);
+      history.replaceState(null, '', `?doi=${encodeURIComponent(dois.join(','))}`);
 
       btn.disabled = true;
       results.innerHTML = '';
