@@ -26,6 +26,16 @@ const DOIHelp = {
       ref: null
     },
     {
+      label: 'ISBN → WorldCat',
+      description: 'Enter an ISBN-10 or ISBN-13 (with or without hyphens) to open the book\'s page on WorldCat. Prefixes like <code style="font-size:12px;background:#f0f0f0;padding:1px 5px;">ISBN:</code> or <code style="font-size:12px;background:#f0f0f0;padding:1px 5px;">ISBN-13:</code> are stripped automatically.',
+      ref: 'https://search.worldcat.org/'
+    },
+    {
+      label: 'Author search → WorldCat',
+      description: 'Any input that doesn\'t match a DOI, ISSN, ISBN, ORCID, or PMID pattern is treated as an author name and opens a WorldCat author search. For example, entering <code style="font-size:12px;background:#f0f0f0;padding:1px 5px;">Jane Goodall</code> will search WorldCat for works by that author.',
+      ref: 'https://search.worldcat.org/'
+    },
+    {
       label: 'Shareable URLs',
       description: 'After a lookup, the browser URL updates to include a <code style="font-size:12px;background:#f0f0f0;padding:1px 5px;">?doi=</code> query parameter. You can copy and share this URL — anyone opening it will automatically run the same lookup. Comma-separated DOIs are supported in the URL as well.',
       ref: null
