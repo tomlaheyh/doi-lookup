@@ -227,12 +227,12 @@
 
   <header>
     <h1>Awesome DOI Lookup</h1>
-    <p>Enter a DOI (up to 10, separated by commas), a single ISSN, ISBN, ORCID, or PMID to retrieve article metadata, metrics, and more. Any other text is a WorldCat author search.</p>
+    <p>Enter a DOI (up to 10, separated by commas), a single ISSN, ISBN, ORCID, or PMID to retrieve article metadata, metrics, and more. Any other text is a WorldCat search.</p>
   </header>
 
   <div class="lookup-box">
     <textarea id="doiInput"
-      placeholder="e.g. 10.1038/s41586-025-09227-0 — DOIs, ISSN, ISBN, ORCID, PMID, or author name"
+      placeholder="e.g. 10.1038/s41586-025-09227-0 — DOIs, ISSN, ISBN, ORCID, PMID, or search WorldCat"
       autocomplete="off" spellcheck="false"></textarea>
     <button id="lookupBtn" onclick="runLookup()">Look Up</button>
   </div>
@@ -384,9 +384,9 @@
       for (const entry of entries) {
         const clean = extractCleanDoi(entry);
         if (!clean) {
-          // Not a recognized identifier — fall through to WorldCat author search
-          setStatus('Opening WorldCat author search...');
-          window.open(`https://search.worldcat.org/search?q=au:${encodeURIComponent(raw)}`, '_blank');
+          // Not a recognized identifier — fall through to WorldCat search
+          setStatus('Opening WorldCat search...');
+          window.open(`https://search.worldcat.org/search?q=${encodeURIComponent(raw)}`, '_blank');
           return;
         }
         dois.push(clean);

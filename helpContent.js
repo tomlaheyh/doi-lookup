@@ -31,8 +31,8 @@ const DOIHelp = {
       ref: 'https://search.worldcat.org/'
     },
     {
-      label: 'Author search → WorldCat',
-      description: 'Any input that doesn\'t match a DOI, ISSN, ISBN, ORCID, or PMID pattern is treated as an author name and opens a WorldCat author search. For example, entering <code style="font-size:12px;background:#f0f0f0;padding:1px 5px;">Jane Goodall</code> will search WorldCat for works by that author.',
+      label: 'Text search → WorldCat',
+      description: 'Any input that doesn\'t match a DOI, ISSN, ISBN, ORCID, or PMID pattern is sent as a general search to WorldCat. This works for titles, authors, keywords, or any combination — for example <code style="font-size:12px;background:#f0f0f0;padding:1px 5px;">Brief History of Time</code> or <code style="font-size:12px;background:#f0f0f0;padding:1px 5px;">Jane Goodall</code>.',
       ref: 'https://search.worldcat.org/'
     },
     {
