@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Awesome Reference Lookup</title>
+  <title>Awesome DOI-Ref-Lookup</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;600&family=IBM+Plex+Sans:wght@300;400;500&display=swap" rel="stylesheet">
   <style>
@@ -227,7 +227,7 @@
 <body>
 
   <header>
-    <h1>Awesome Reference Lookup</h1>
+    <h1>Awesome DOI-Ref-Lookup</h1>
     <p>Enter a DOI (up to 15, separated by commas), a single ISSN, ISBN, ORCID, or PMID to retrieve article metadata, metrics, and more. Any other text is a WorldCat search (prefix with author: or title: to narrow).</p>
   </header>
 
@@ -243,6 +243,7 @@
     <button id="clearBtn" onclick="clearList()">Clear list</button>
     <div id="status"></div>
   </div>
+  <div id="retractionStatus" style="display:none; max-width:1400px; margin:0 auto 8px; font-family:var(--mono); font-size:13px; line-height:1.5;"></div>
   <div id="results"></div>
 
   <!-- Footer removed — attribution now appears on each result card -->
@@ -448,6 +449,12 @@
           window.__xdoiResult = curateXdoiResult(_allResults[0]);
         }
 
+        // Check for retraction — show popup alert
+        const latestResult = _allResults.find(r => r._doi === doi);
+        if (latestResult && latestResult._isRetracted) {
+          showRetractionAlert(doi);
+        }
+
         completed++;
       }
 
@@ -471,6 +478,41 @@
       const dois = _allResults.map(r => r._doi);
       input.value = dois.join(', ');
       setStatus('');
+
+      // Color retracted DOIs red in the input — since textarea can't have mixed colors,
+      // show a red warning line below the input for any retracted DOIs
+      const retracted = _allResults.filter(r => r._isRetracted).map(r => r._doi);
+      const retractionStatus = document.getElementById('retractionStatus');
+      if (retracted.length > 0) {
+        retractionStatus.innerHTML = `<span style="color:#cc0000; font-weight:600;">⚠ RETRACTED:</span> ${retracted.map(d => `<span style="color:#cc0000;">${escapeHtml(d)}</span>`).join(', ')}`;
+        retractionStatus.style.display = 'block';
+      } else {
+        retractionStatus.style.display = 'none';
+      }
+    }
+
+    function escapeHtml(s) {
+      return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+    }
+
+    function showRetractionAlert(doi) {
+      // Create a modal overlay
+      const overlay = document.createElement('div');
+      overlay.style.cssText = 'position:fixed; z-index:99999; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.5); display:flex; align-items:center; justify-content:center;';
+
+      const box = document.createElement('div');
+      box.style.cssText = 'background:#fff; padding:32px; max-width:500px; width:90%; border:3px solid #cc0000; text-align:center; font-family:var(--sans,"IBM Plex Sans",sans-serif);';
+      box.innerHTML = `
+        <div style="font-size:48px; margin-bottom:12px;">⚠️</div>
+        <div style="font-size:20px; font-weight:600; color:#cc0000; margin-bottom:8px;">RETRACTED ARTICLE</div>
+        <div style="font-family:var(--mono,'IBM Plex Mono',monospace); font-size:13px; color:#666; margin-bottom:20px; word-break:break-all;">${escapeHtml(doi)}</div>
+        <div style="font-size:14px; color:#333; margin-bottom:20px; line-height:1.5;">This article has been retracted. Review the details below for retraction source and related notices.</div>
+        <button onclick="this.closest('div[style*=fixed]').remove()" style="font-family:var(--mono,'IBM Plex Mono',monospace); font-size:13px; font-weight:600; padding:10px 28px; background:#cc0000; color:#fff; border:none; cursor:pointer;">OK — View Details</button>
+      `;
+
+      overlay.appendChild(box);
+      overlay.addEventListener('click', (e) => { if (e.target === overlay) overlay.remove(); });
+      document.body.appendChild(overlay);
     }
 
     function updateCardNumbers() {

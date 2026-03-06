@@ -622,6 +622,8 @@ function showDOIModal(result, linksHtml) {
   {
     const _hasRetraction = _updateEntries.some(e => e.type === 'retraction') || result.pubmedIsRetractedPublication;
     const _hasEOC        = _updateEntries.some(e => e.type === 'expression-of-concern');
+    result._isRetracted = _hasRetraction;
+    result._hasEOC = _hasEOC;
     if (_hasRetraction) {
       html += `<div style="display: inline-block; margin-bottom: 10px; padding: 3px 12px; background: #fff0f0; border: 1px solid #cc0000; font-size: 17px; font-weight: bold; color: #cc0000;">Quality: Retracted</div>`;
     } else if (_hasEOC) {
