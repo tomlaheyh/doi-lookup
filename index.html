@@ -260,10 +260,14 @@
 
   <!-- Footer removed — attribution now appears on each result card -->
 
-  <script src="helpContent.js"></script>
-  <script src="doiLookup.js"></script>
-  <script src="pubmedLookup-nonmodule.js"></script>
-  <script src="lookup.js"></script>
+  <script>
+    // Cache-busting: add &nocache to URL to force fresh script loads
+    const _nocache = new URLSearchParams(window.location.search).has('nocache');
+    const _bust = _nocache ? '?' + Date.now() : '';
+    ['helpContent.js', 'doiLookup.js', 'pubmedLookup-nonmodule.js', 'lookup.js'].forEach(src => {
+      document.write('<script src="' + src + _bust + '"><\/script>');
+    });
+  </script>
   <script>
     const input   = document.getElementById('doiInput');
     const btn     = document.getElementById('lookupBtn');
