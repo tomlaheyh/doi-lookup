@@ -122,9 +122,43 @@ function extractDOI(text) {
 }
 
 // ============================================================================
+// SESSION CACHE — lives only while the tab is open, clears on tab close
+// ============================================================================
+const SCACHE_PREFIX = 'doi_sc_';
+
+function _sessionCacheGet(doi) {
+  try {
+    const raw = sessionStorage.getItem(SCACHE_PREFIX + doi.toLowerCase());
+    if (!raw) return null;
+    const { data, linksHtml } = JSON.parse(raw);
+    console.log(`[Session Cache] HIT for ${doi}`);
+    return { data, linksHtml };
+  } catch (e) { return null; }
+}
+
+function _sessionCacheSet(doi, data, linksHtml) {
+  try {
+    const serialisable = JSON.parse(JSON.stringify(data));
+    sessionStorage.setItem(SCACHE_PREFIX + doi.toLowerCase(), JSON.stringify({
+      data: serialisable,
+      linksHtml
+    }));
+    console.log(`[Session Cache] SET for ${doi}`);
+  } catch (e) {
+    console.warn('[Session Cache] Failed to write:', e);
+  }
+}
+
 // Handler for DOI lookup
 async function handleDOILookup(doiInput) {
   const doi = extractDOI(doiInput);
+
+  // Check session cache first — avoids re-fetching on page reload from extension
+  const cached = _sessionCacheGet(doi);
+  if (cached) {
+    showDOIModal(cached.data, cached.linksHtml);
+    return;
+  }
 
   try {
     console.log(`[DOI Lookup] Starting lookup for: ${doi}`);
@@ -182,6 +216,9 @@ async function handleDOILookup(doiInput) {
       pubmed:    allData.pubmedAuthorLastORCID      || null,
       openalex:  allData._oaLastAuthorOrcid         || null,
     });
+
+    // Cache in session before displaying
+    _sessionCacheSet(doi, allData, linksData);
 
     // Display results in modal - all data complete
     showDOIModal(allData, linksData);
