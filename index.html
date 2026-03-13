@@ -434,7 +434,7 @@
       // Combine existing + new DOIs and update URL for shareability
       const allDois = [...newDois, ...existingDois];
       const nocache = new URLSearchParams(window.location.search).has('nocache');
-      history.replaceState(null, '', `?doi=${encodeURIComponent(allDois.join(','))}${nocache ? '&nocache' : ''}`);
+      history.replaceState(null, '', `?doi=${encodeURIComponent(allDois.join(',')).replace(/\(/g, '%28').replace(/\)/g, '%29')}${nocache ? '&nocache' : ''}`);
 
       btn.disabled = true;
       window.__xdoiResult = null;
@@ -523,7 +523,7 @@
       const dois = _allResults.map(r => r._doi);
       const nocache = new URLSearchParams(window.location.search).has('nocache');
       if (dois.length > 0) {
-        history.replaceState(null, '', `?doi=${encodeURIComponent(dois.join(','))}${nocache ? '&nocache' : ''}`);
+        history.replaceState(null, '', `?doi=${encodeURIComponent(dois.join(',')).replace(/\(/g, '%28').replace(/\)/g, '%29')}${nocache ? '&nocache' : ''}`);
       } else {
         history.replaceState(null, '', window.location.pathname);
       }
