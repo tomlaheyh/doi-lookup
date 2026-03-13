@@ -217,6 +217,9 @@ async function handleDOILookup(doiInput) {
       openalex:  allData._oaLastAuthorOrcid         || null,
     });
 
+    // Brief pause to let all async data fully settle before caching
+    await new Promise(resolve => setTimeout(resolve, 500));
+
     // Cache in session before displaying
     _sessionCacheSet(doi, allData, linksData);
 
