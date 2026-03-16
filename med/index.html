@@ -1,0 +1,1190 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Clinical Practice Guidelines — Ref-Lookup</title>
+  <script async src="https://www.googletagmanager.com/gtag/js?id=G-RDT3VP4L1D"></script>
+  <script>
+    window.dataLayer = window.dataLayer || [];
+    function gtag(){dataLayer.push(arguments);}
+    gtag('js', new Date());
+    gtag('config', 'G-RDT3VP4L1D');
+  </script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;600&family=IBM+Plex+Sans:wght@300;400;500&display=swap" rel="stylesheet">
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg:      #f4f3ef;
+      --surface: #ffffff;
+      --border:  #d8d5cc;
+      --accent:  #005a8c;
+      --accent2: #c8440a;
+      --text:    #1a1a18;
+      --muted:   #888880;
+      --mono:    'IBM Plex Mono', monospace;
+      --sans:    'IBM Plex Sans', sans-serif;
+      --us-col:  #005a8c;
+      --eu-col:  #7a5500;
+      --glb-col: #2e6b3e;
+    }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: var(--sans);
+      font-weight: 300;
+      min-height: 100vh;
+      padding: 0 16px 60px;
+    }
+
+    /* ── Header ── */
+    header {
+      max-width: 1400px;
+      margin: 0 auto;
+      padding: 20px 0 14px;
+      border-bottom: 2px solid var(--text);
+      margin-bottom: 10px;
+    }
+    header h1 {
+      font-family: var(--mono);
+      font-size: 24px;
+      font-weight: 600;
+      letter-spacing: -0.5px;
+    }
+    header p {
+      margin-top: 4px;
+      font-size: 14px;
+      color: var(--muted);
+      font-weight: 300;
+    }
+    .header-nav {
+      margin-top: 8px;
+      font-size: 13px;
+      color: var(--muted);
+    }
+    .header-nav a {
+      color: var(--accent);
+      text-decoration: none;
+      font-family: var(--mono);
+    }
+    .header-nav a:hover { text-decoration: underline; }
+
+    /* ── Page wrap + controls ── */
+    .page-wrap { max-width: 1400px; margin: 0 auto; }
+
+    .controls {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin: 14px 0 12px;
+      flex-wrap: wrap;
+    }
+    .filter-label {
+      font-family: var(--mono);
+      font-size: 12px;
+      color: var(--muted);
+      letter-spacing: 0.5px;
+      text-transform: uppercase;
+    }
+    .filter-btn {
+      font-family: var(--mono);
+      font-size: 13px;
+      font-weight: 600;
+      padding: 4px 12px;
+      border: 1.5px solid var(--border);
+      background: var(--surface);
+      color: var(--text);
+      cursor: pointer;
+      transition: all 0.12s;
+    }
+    .filter-btn:hover { border-color: var(--accent); color: var(--accent); }
+    .filter-btn.active { background: var(--accent); color: #fff; border-color: var(--accent); }
+    .filter-select {
+      font-family: var(--mono);
+      font-size: 13px;
+      padding: 4px 8px;
+      border: 1.5px solid var(--border);
+      background: var(--surface);
+      color: var(--text);
+      outline: none;
+      cursor: pointer;
+    }
+    .filter-select:focus { border-color: var(--accent); }
+    .search-box {
+      font-family: var(--mono);
+      font-size: 14px;
+      padding: 4px 10px;
+      border: 1.5px solid var(--border);
+      background: var(--surface);
+      color: var(--text);
+      outline: none;
+      width: 220px;
+      margin-left: auto;
+    }
+    .search-box:focus { border-color: var(--accent); }
+
+    /* ── Section heading ── */
+    .section-heading {
+      font-family: var(--mono);
+      font-size: 12px;
+      font-weight: 600;
+      letter-spacing: 1.5px;
+      text-transform: uppercase;
+      color: var(--muted);
+      padding: 12px 0 4px;
+      border-top: 1px solid var(--border);
+      margin-top: 8px;
+    }
+
+    /* ── Condition card ── */
+    .condition-card {
+      background: var(--surface);
+      border: 1.5px solid var(--border);
+      margin-bottom: 8px;
+      overflow: hidden;
+    }
+    .condition-card.hidden { display: none; }
+
+    /* Card header */
+    .card-header {
+      padding: 10px 14px 8px;
+      border-bottom: 1px solid var(--border);
+      background: #f7f6f2;
+    }
+    .card-condition-title {
+      font-family: var(--mono);
+      font-size: 15px;
+      font-weight: 600;
+      color: var(--text);
+    }
+    .card-category-tag {
+      display: inline-block;
+      font-family: var(--mono);
+      font-size: 10px;
+      font-weight: 600;
+      letter-spacing: 1px;
+      text-transform: uppercase;
+      color: var(--muted);
+      border: 1px solid var(--border);
+      padding: 1px 5px;
+      margin-left: 8px;
+      vertical-align: middle;
+    }
+    .card-mesh {
+      margin-top: 4px;
+      font-size: 12px;
+      color: var(--muted);
+    }
+    .mesh-toggle {
+      font-family: var(--mono);
+      font-size: 11px;
+      color: var(--accent);
+      cursor: pointer;
+      background: none;
+      border: none;
+      padding: 0;
+    }
+    .mesh-toggle:hover { text-decoration: underline; }
+    .mesh-terms { display: none; margin-top: 3px; line-height: 1.6; }
+    .mesh-terms.open { display: block; }
+
+    /* ── Guideline row ── */
+    .guideline-row {
+      display: grid;
+      grid-template-columns: 44px 1fr auto;
+      align-items: stretch;
+      border-top: 1px solid var(--border);
+    }
+
+    .row-region {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: var(--us-col);
+    }
+    .row-region.eu { background: var(--eu-col); }
+    .row-region.glb { background: var(--glb-col); }
+    .row-region span {
+      font-family: var(--mono);
+      font-size: 10px;
+      font-weight: 600;
+      color: #fff;
+      letter-spacing: 1px;
+      writing-mode: vertical-rl;
+      transform: rotate(180deg);
+      text-transform: uppercase;
+    }
+
+    .row-body { padding: 9px 14px; }
+    .row-title {
+      font-size: 15px;
+      font-weight: 400;
+      color: var(--text);
+      line-height: 1.35;
+    }
+    .row-meta {
+      margin-top: 3px;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 4px 12px;
+      align-items: baseline;
+    }
+    .year-badge {
+      font-family: var(--mono);
+      font-size: 11px;
+      font-weight: 600;
+      color: #fff;
+      background: var(--us-col);
+      padding: 1px 5px;
+      flex-shrink: 0;
+    }
+    .row-bodies {
+      font-size: 13px;
+      color: var(--text);
+      font-weight: 400;
+    }
+    .row-note {
+      font-size: 12px;
+      color: var(--muted);
+      font-style: italic;
+    }
+    .row-evidence {
+      font-family: var(--mono);
+      font-size: 11px;
+      color: var(--muted);
+      margin-top: 3px;
+      width: 100%;
+    }
+    .row-evidence .ev-label {
+      color: var(--muted);
+      letter-spacing: 0.3px;
+    }
+    .row-evidence .ev-dates {
+      color: var(--text);
+      font-weight: 600;
+    }
+    .row-evidence .ev-sep {
+      color: var(--border);
+      margin: 0 6px;
+    }
+    .row-evidence .ev-researching {
+      color: var(--accent2);
+      font-style: italic;
+      font-family: var(--sans);
+      font-size: 11px;
+    }
+
+    .row-links {
+      padding: 9px 14px 9px 6px;
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      align-items: flex-end;
+      min-width: 130px;
+      flex-shrink: 0;
+      justify-content: center;
+    }
+    .row-links a {
+      font-family: var(--mono);
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--accent);
+      text-decoration: none;
+      white-space: nowrap;
+      padding: 2px 8px;
+      border: 1px solid var(--accent);
+      transition: all 0.12s;
+    }
+    .row-links a:hover { background: var(--accent); color: #fff; }
+    .row-links a.soc {
+      color: var(--muted);
+      border-color: var(--border);
+      font-weight: 400;
+    }
+    .row-links a.soc:hover { background: var(--muted); color: #fff; border-color: var(--muted); }
+    .row-verified {
+      font-family: var(--mono);
+      font-size: 11px;
+      color: var(--border);
+      margin-top: 2px;
+    }
+
+    /* ── Analysis bar ── */
+    .card-analysis-bar {
+      border-top: 1px solid var(--border);
+      background: #fafaf8;
+    }
+    .analysis-toggle {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      width: 100%;
+      padding: 5px 14px 5px 58px;
+      font-family: var(--mono);
+      font-size: 11px;
+      font-weight: 600;
+      color: var(--accent2);
+      background: none;
+      border: none;
+      cursor: pointer;
+      text-align: left;
+      letter-spacing: 0.5px;
+      text-transform: uppercase;
+      transition: background 0.12s;
+    }
+    .analysis-toggle:hover { background: #f0ede6; }
+    .analysis-panel {
+      display: none;
+      padding: 12px 14px 14px 58px;
+      border-top: 1px dashed var(--border);
+    }
+    .analysis-panel.open { display: block; }
+    .analysis-section { margin-bottom: 10px; }
+    .analysis-section:last-child { margin-bottom: 0; }
+    .analysis-heading {
+      font-family: var(--mono);
+      font-size: 11px;
+      font-weight: 600;
+      letter-spacing: 0.8px;
+      text-transform: uppercase;
+      color: var(--muted);
+      margin-bottom: 3px;
+    }
+    .analysis-body {
+      font-size: 13px;
+      font-weight: 300;
+      color: var(--text);
+      line-height: 1.6;
+    }
+    .analysis-placeholder {
+      color: var(--border);
+      font-style: italic;
+    }
+
+    /* ── Footer ── */
+    .page-footer {
+      margin-top: 30px;
+      padding-top: 14px;
+      border-top: 1px solid var(--border);
+      font-size: 13px;
+      color: var(--muted);
+      line-height: 1.6;
+    }
+    .page-footer a { color: var(--accent); }
+
+    @media (max-width: 640px) {
+      .guideline-row { grid-template-columns: 28px 1fr; }
+      .row-links {
+        flex-direction: row;
+        flex-wrap: wrap;
+        padding: 0 14px 8px;
+        grid-column: 1 / -1;
+        justify-content: flex-start;
+        min-width: unset;
+      }
+      .row-links a.soc { display: none; }
+      .row-links .row-verified { display: none; }
+      .search-box { width: 100%; margin-left: 0; }
+    }
+  </style>
+</head>
+<body>
+
+<header>
+  <h1>Clinical Practice Guidelines</h1>
+  <p>Current major guidelines for cardiovascular &amp; metabolic medicine — US and EU sources shown together per condition for direct comparison. Each row links to the published guideline DOI and the issuing society's resource page.</p>
+  <p style="margin-top:5px; font-size:13px;">MeSH terms support automated matching in the <a href="../" style="color:var(--accent);">DOI Ref-Lookup</a> extension. <strong>Full Guideline ⚠</strong> = paywalled; no ⚠ = free access.</p>
+  <div class="header-nav">← <a href="../">Back to DOI Ref-Lookup</a></div>
+</header>
+
+<div class="page-wrap">
+
+  <div class="controls">
+    <span class="filter-label">Region:</span>
+    <button class="filter-btn active" data-region="all">All</button>
+    <button class="filter-btn" data-region="us">US only</button>
+    <button class="filter-btn" data-region="eu">EU only</button>
+    <span class="filter-label" style="margin-left:8px;">Category:</span>
+    <select class="filter-select" id="categorySelect">
+      <option value="all">All categories</option>
+      <option value="cardio-prev">CV Prevention</option>
+      <option value="cardio">Cardiac Conditions</option>
+      <option value="metabolic">Metabolic</option>
+      <option value="renal">Renal</option>
+      <option value="structural">Structural</option>
+    </select>
+    <input class="search-box" type="text" id="searchBox" placeholder="Search condition or MeSH…">
+  </div>
+
+  <!-- ══════════════════════════════════════
+       CARDIOVASCULAR PREVENTION
+  ══════════════════════════════════════ -->
+  <div class="section-heading">Cardiovascular Prevention</div>
+
+  <!-- ── DYSLIPIDEMIA ── -->
+  <div class="condition-card"
+       data-category="cardio-prev"
+       data-topic="dyslipidemia cholesterol ldl statin lipid triglycerides lipoprotein hdl"
+       data-mesh="Dyslipidemias; Hypercholesterolemia; Cholesterol, LDL; Hydroxymethylglutaryl-CoA Reductase Inhibitors; Hypertriglyceridemia; Lipoprotein(a); Apolipoprotein B; Cardiovascular Diseases; Primary Prevention; Secondary Prevention; PCSK9 Inhibitors">
+
+    <div class="card-header">
+      <span class="card-condition-title">Dyslipidemia &amp; Cholesterol Management</span>
+      <span class="card-category-tag">CV Prevention</span>
+      <div class="card-mesh">
+        <button class="mesh-toggle" onclick="toggleMesh(this)">▸ MeSH terms</button>
+        <div class="mesh-terms">Dyslipidemias · Hypercholesterolemia · Cholesterol, LDL · Hydroxymethylglutaryl-CoA Reductase Inhibitors · Hypertriglyceridemia · Lipoprotein(a) · Apolipoprotein B · Cardiovascular Diseases · Primary Prevention · Secondary Prevention · PCSK9 Inhibitors</div>
+      </div>
+    </div>
+
+    <div class="guideline-row">
+      <div class="row-region"><span>US</span></div>
+      <div class="row-body">
+        <div class="row-title">2026 ACC/AHA/AACVPR/ABC/ACPM/ADA/AGS/APhA/ASPC/NLA/PCNA Guideline on the Management of Dyslipidemia</div>
+        <div class="row-meta">
+          <span class="year-badge">2026</span>
+          <span class="row-bodies">ACC / AHA + 9 societies</span>
+          <span class="row-note">Replaces 2018 · irregular update cycle</span>
+        </div>
+        <div class="row-evidence">
+          <span class="ev-label">Data range: </span><span class="ev-dates">Oct 2024 – Dec 2024</span><span class="ev-sep">·</span><span class="ev-label">Published: </span><span class="ev-dates">Mar 13, 2026</span>
+        </div>
+      </div>
+      <div class="row-links">
+        <a href="https://doi.org/10.1016/j.jacc.2025.11.016" target="_blank" title="Paywalled — JACC / Circulation">Full Guideline ⚠</a>
+        <a href="https://professional.heart.org/en/science-news/2026-guideline-on-the-management-of-dyslipidemia" target="_blank" class="soc">AHA</a>
+        <a href="https://www.acc.org/Latest-in-Cardiology/Journal-Scans/2026/03/13/15/20/ACC-AHA-Release-New-Clinical-Guideline-For-Managing-Dyslipidemia" target="_blank" class="soc">ACC</a>
+        <div class="row-verified">Verified Mar 2026</div>
+      </div>
+    </div>
+
+    <div class="guideline-row eu-row">
+      <div class="row-region eu"><span>EU</span></div>
+      <div class="row-body">
+        <div class="row-title">2025 ESC/EAS Focused Update of the 2019 Guidelines for the Management of Dyslipidaemias</div>
+        <div class="row-meta">
+          <span class="year-badge" style="background:var(--eu-col)">2025</span>
+          <span class="row-bodies">ESC / European Atherosclerosis Society</span>
+          <span class="row-note">Focused update · base guideline 2019 · irregular cycle</span>
+        </div>
+        <div class="row-evidence">
+          <span class="ev-label">Data range: </span><span class="ev-researching">2019</span><span class="ev-dates"> – Mar 2025</span><span class="ev-sep">·</span><span class="ev-label">Published: </span><span class="ev-dates">Aug 29, 2025</span><span class="ev-sep">·</span><span class="ev-label">Corrected: </span><span class="ev-dates">Feb 7, 2026</span>
+        </div>
+      </div>
+      <div class="row-links">
+        <a href="https://doi.org/10.1093/eurheartj/ehaf190" target="_blank" title="Free — European Heart Journal / Oxford Academic">Full Guideline</a>
+        <a href="https://www.escardio.org/Guidelines/Clinical-Practice-Guidelines/Dyslipidaemias-Management-of" target="_blank" class="soc">ESC</a>
+        <div class="row-verified">Verified Mar 2026</div>
+      </div>
+    </div>
+
+    <div class="card-analysis-bar">
+      <button class="analysis-toggle" onclick="toggleAnalysis(this)"><span>▸</span>&nbsp; Analysis &amp; Context</button>
+      <div class="analysis-panel">
+        <div class="analysis-section">
+          <div class="analysis-heading">Key Recommendations (EU 2025 Focused Update)</div>
+          <div class="analysis-body">
+            <strong>Risk estimation:</strong> Adopts SCORE2 (age &lt;70) and SCORE2-OP (age ≥70) in place of the original SCORE algorithm for 10-year fatal + non-fatal CVD risk. Risk categories (very high / high / moderate / low) are redefined using SCORE2/SCORE2-OP thresholds. LDL-C treatment goals are <em>unchanged</em> from 2019: &lt;1.4 mmol/L (&lt;55 mg/dL) + ≥50% reduction for very high risk; &lt;1.8 mmol/L (&lt;70 mg/dL) for high risk; &lt;2.6 mmol/L (&lt;100 mg/dL) for moderate risk.<br><br>
+            <strong>New therapies:</strong> Bempedoic acid (Class I for statin-intolerant patients; Class IIa as add-on to maximally tolerated statin ± ezetimibe). Evinacumab (Class IIa for homozygous FH age ≥5 not at goal). Inclisiran outcome trials ongoing (results expected 2026–2027).<br><br>
+            <strong>ACS — "strike early and strong":</strong> Intensification of lipid-lowering during index ACS hospitalization (Class I). Initiate combination statin + ezetimibe during hospitalization for treatment-naïve patients unlikely to reach goal on statin alone (Class IIa).<br><br>
+            <strong>Lp(a):</strong> Levels &gt;50 mg/dL (105 nmol/L) should be considered a CV risk-enhancing factor (Class IIa). Measurement recommended at least once per lifetime. Specific Lp(a)-lowering therapies in trials (RNA-based agents lower Lp(a) by 80–98%).<br><br>
+            <strong>Hypertriglyceridemia:</strong> High-dose icosapent ethyl (2 × 2 g/day) endorsed (Class IIa) for high/very-high risk with elevated triglycerides on statin. Combined EPA/DHA (STRENGTH trial) did not show benefit — recommendation now explicitly specifies purified EPA. Volanesorsen (Class IIa) for familial chylomicronemia syndrome (EMA-approved only).<br><br>
+            <strong>Special populations:</strong> Statin therapy recommended (Class I) for HIV patients ≥40 years in primary prevention regardless of estimated risk (REPRIEVE trial). Statins considered (Class IIa) for cancer patients at high/very high chemotherapy-related CV toxicity risk (STOP-CA trial). Dietary supplements not recommended (Class III) for ASCVD risk reduction.
+          </div>
+        </div>
+        <div class="analysis-section">
+          <div class="analysis-heading">US vs EU Differences</div>
+          <div class="analysis-body analysis-placeholder">— to be completed once US 2026 ACC/AHA guideline is reviewed —</div>
+        </div>
+        <div class="analysis-section">
+          <div class="analysis-heading">Considerations &amp; Emerging Evidence</div>
+          <div class="analysis-body">
+            <strong>Correction notice:</strong> A correction was published Feb 7, 2026 (doi: 10.1093/eurheartj/ehaf1036) — should be checked for any material changes to recommendations.<br><br>
+            <strong>Ongoing trials to watch:</strong> Two inclisiran CV outcome trials (NCT03705234 reporting ~2026; NCT05030428 ~2027). EVOLVE-MI and AMUNDSEN-real trials testing evolocumab at ACS onset (results 2026–2027). Multiple Lp(a)-lowering agents in phase III trials (pelacarsen, olpasiran, lepodisiran, muvalaplin, zerlasiran).<br><br>
+            <strong>Key nuance — focused update vs full guideline:</strong> This is a <em>focused update</em>, not a full replacement of the 2019 ESC/EAS Guidelines. All 2019 recommendations not explicitly changed remain in effect. The base guideline (doi: 10.1093/eurheartj/ehz455) should be read alongside this update.
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── HYPERTENSION ── -->
+  <div class="condition-card"
+       data-category="cardio-prev"
+       data-topic="hypertension blood pressure antihypertensive systolic diastolic"
+       data-mesh="Hypertension; Blood Pressure; Antihypertensive Agents; Cardiovascular Diseases; Primary Prevention; Risk Assessment; Kidney Diseases; Pregnancy Complications, Cardiovascular; Primary Aldosteronism; PREVENT">
+
+    <div class="card-header">
+      <span class="card-condition-title">Hypertension / High Blood Pressure</span>
+      <span class="card-category-tag">CV Prevention</span>
+      <div class="card-mesh">
+        <button class="mesh-toggle" onclick="toggleMesh(this)">▸ MeSH terms</button>
+        <div class="mesh-terms">Hypertension · Blood Pressure · Antihypertensive Agents · Cardiovascular Diseases · Primary Prevention · Risk Assessment · Kidney Diseases · Pregnancy Complications, Cardiovascular · Primary Aldosteronism · PREVENT equations</div>
+      </div>
+    </div>
+
+    <div class="guideline-row">
+      <div class="row-region"><span>US</span></div>
+      <div class="row-body">
+        <div class="row-title">2025 AHA/ACC/AANP/AAPA/ABC/ACCP/ACPM/AGS/AMA/ASPC/NMA/PCNA/SGIM Guideline for the Prevention, Detection, Evaluation and Management of High Blood Pressure in Adults</div>
+        <div class="row-meta">
+          <span class="year-badge">2025</span>
+          <span class="row-bodies">AHA / ACC + 11 societies</span>
+          <span class="row-note">Replaces 2017 · treatment threshold 130/80 mmHg</span>
+        </div>
+        <div class="row-evidence">
+          <span class="ev-label">Data range: </span><span class="ev-dates">Dec 2023 – Jun 2024</span><span class="ev-sep">·</span><span class="ev-label">Published: </span><span class="ev-dates">Aug 14, 2025</span>
+        </div>
+      </div>
+      <div class="row-links">
+        <a href="https://doi.org/10.1161/CIR.0000000000001356" target="_blank" title="Paywalled — Circulation / Hypertension">Full Guideline ⚠</a>
+        <a href="https://professional.heart.org/en/science-news/2025-high-blood-pressure-guideline" target="_blank" class="soc">AHA</a>
+        <a href="https://www.acc.org/Latest-in-Cardiology/Journal-Scans/2025/08/14/15/36/New-ACC-AHA-Guideline-Addresses-Prevention-Detection-Evaluation-and-Management-of-HBP" target="_blank" class="soc">ACC</a>
+        <div class="row-verified">Verified Mar 2026</div>
+      </div>
+    </div>
+
+    <div class="guideline-row eu-row">
+      <div class="row-region eu"><span>EU</span></div>
+      <div class="row-body">
+        <div class="row-title">2024 ESC Guidelines for the Management of Elevated Blood Pressure and Hypertension</div>
+        <div class="row-meta">
+          <span class="year-badge" style="background:var(--eu-col)">2024</span>
+          <span class="row-bodies">ESC — endorsed by ESE &amp; ESO</span>
+          <span class="row-note">Replaces 2018 · hypertension threshold 140/90 mmHg (vs US 130/80)</span>
+        </div>
+        <div class="row-evidence">
+          <span class="ev-label">Data range: </span><span class="ev-researching">being researched</span><span class="ev-sep">·</span><span class="ev-label">Published: </span><span class="ev-dates">Aug 30, 2024</span><span class="ev-sep">·</span><span class="ev-label">Corrected: </span><span class="ev-dates">Apr 7, 2025</span>
+        </div>
+      </div>
+      <div class="row-links">
+        <a href="https://doi.org/10.1093/eurheartj/ehae178" target="_blank" title="Free — European Heart Journal / Oxford Academic">Full Guideline</a>
+        <a href="https://www.escardio.org/guidelines/clinical-practice-guidelines/all-esc-practice-guidelines/elevated-blood-pressure-and-hypertension/" target="_blank" class="soc">ESC</a>
+        <div class="row-verified">Verified Mar 2026</div>
+      </div>
+    </div>
+
+    <div class="card-analysis-bar">
+      <button class="analysis-toggle" onclick="toggleAnalysis(this)"><span>▸</span>&nbsp; Analysis &amp; Context</button>
+      <div class="analysis-panel">
+        <div class="analysis-section">
+          <div class="analysis-heading">Key Recommendations (EU 2024)</div>
+          <div class="analysis-body">
+            <strong>New BP classification (simplified to 3 categories):</strong> Non-elevated BP (office SBP &lt;120 and DBP &lt;70 mmHg), Elevated BP (120–139 / 70–89 mmHg), and Hypertension (≥140/90 mmHg). The previous grading system (Grade 1/2/3, high-normal, etc.) and 3-stage classification from 2018 are retired.<br><br>
+            <strong>Hypertension threshold unchanged at 140/90 mmHg</strong> — but the guideline now emphasizes that CVD risk from BP is continuous, not binary. The title itself changed from "arterial hypertension" to "elevated blood pressure and hypertension" to reflect this.<br><br>
+            <strong>Treatment targets (Class I):</strong> SBP 120–129 mmHg for most treated adults. DBP 70–79 mmHg (Class IIb). Applies the ALARA principle — "As Low As Reasonably Achievable" — with relaxed targets for age ≥85, moderate-to-severe frailty, symptomatic orthostatic hypotension, or limited life expectancy.<br><br>
+            <strong>Risk-based treatment for elevated BP:</strong> In the elevated BP category (120–139/70–89), drug treatment is recommended for those at sufficiently high CVD risk (established CVD, moderate-to-severe CKD, HMOD, diabetes, FH) or SCORE2/SCORE2-OP ≥10%. For SCORE2 5–&lt;10%, risk modifiers are assessed. Drug treatment is initiated if confirmed BP remains ≥130/80 mmHg after lifestyle measures.<br><br>
+            <strong>Pharmacotherapy:</strong> Upfront low-dose dual combination therapy (Class I) for confirmed hypertension using ACE inhibitor or ARB + CCB or thiazide/thiazide-like diuretic, preferably as single-pill combination. Step up to triple combination if needed. Spironolactone recommended as fourth-line for resistant hypertension (Class IIa). Beta-blockers reserved for compelling indications (post-MI, HF, rate control).<br><br>
+            <strong>Out-of-office BP measurement:</strong> Recommended (Class I) for diagnosis (detecting white-coat and masked hypertension) and for ongoing management/titration. HBPM and ABPM considered complementary.<br><br>
+            <strong>Screening for primary aldosteronism:</strong> Now recommended for all hypertensive adults (Class IIa) — a significant change reflecting growing evidence of underdiagnosis.<br><br>
+            <strong>Renal denervation:</strong> May be considered (Class IIb) for resistant hypertension at experienced centres after shared decision-making. Contraindicated if eGFR &lt;40 (Class III).
+          </div>
+        </div>
+        <div class="analysis-section">
+          <div class="analysis-heading">US vs EU Differences</div>
+          <div class="analysis-body">
+            <strong>Hypertension definition threshold — the biggest divergence:</strong> EU defines hypertension at ≥140/90 mmHg; the US 2025 AHA/ACC guideline uses 130/80 mmHg (carried forward from 2017). This means many patients are "hypertensive" in US guidelines but only have "elevated BP" under ESC classification.<br><br>
+            <strong>Treatment targets converge somewhat:</strong> Both now target SBP ~120 mmHg in most adults, though ESC specifies 120–129 mmHg as the target range (with ALARA principle) while US uses &lt;130/80 as a threshold. ESC's approach is arguably more intensive once treatment starts (target lower than the old 2018 ESC target of &lt;130).<br><br>
+            <strong>Who gets treated:</strong> ESC uses a risk-based approach for elevated BP (120–139/70–89), requiring CVD risk assessment before drug initiation. The US approach with the lower 130/80 threshold for defining hypertension leads to more people receiving medication from the outset without requiring formal risk scoring.<br><br>
+            <strong>Combination therapy:</strong> Both favour early combination therapy. ESC gives upfront dual combination a Class I recommendation for confirmed hypertension; US 2025 guideline similarly endorses initial combination therapy.<br><br>
+            <strong>Pending:</strong> Full comparison to be updated after US 2025 AHA/ACC hypertension guideline is reviewed in detail.
+          </div>
+        </div>
+        <div class="analysis-section">
+          <div class="analysis-heading">Considerations &amp; Emerging Evidence</div>
+          <div class="analysis-body">
+            <strong>Correction notice:</strong> A correction was published Apr 7, 2025 (doi: 10.1093/eurheartj/ehaf031) — should be checked for material changes.<br><br>
+            <strong>Major new trials post-publication:</strong> ESPRIT (intensive SBP &lt;120 vs &lt;140 in China, published Lancet 2024) and an intensive BP trial in type 2 diabetes (NEJM, Nov 2024) further support intensive targets — broadly consistent with the ESC 2024 direction.<br><br>
+            <strong>Emerging therapies mentioned in guideline (awaiting outcome data):</strong> Aldosterone synthase inhibitors (baxdrostat, lorundrostat) — significant BP lowering in phase 2 trials. Zilebesiran (RNA interference targeting angiotensinogen) — single dose lowers 24h BP for ~6 months. Aprocitentan (dual endothelin receptor antagonist) — phase 3 data in resistant hypertension. None yet recommended for routine use pending CV outcomes trials.<br><br>
+            <strong>This is a full guideline replacement</strong> (not a focused update) — the entire 2018 ESC/ESH guideline is superseded. Note ESH is no longer a co-author society; the 2024 guideline is ESC-only, endorsed by ESE and ESO.
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ══════════════════════════════════════
+       CARDIAC CONDITIONS
+  ══════════════════════════════════════ -->
+  <div class="section-heading">Cardiac Conditions</div>
+
+  <!-- ── HEART FAILURE ── -->
+  <div class="condition-card"
+       data-category="cardio"
+       data-topic="heart failure HFrEF HFpEF ejection fraction SGLT2 ARNI sacubitril carvedilol"
+       data-mesh="Heart Failure; Heart Failure, Systolic; Heart Failure, Diastolic; Stroke Volume; Ventricular Dysfunction, Left; Sodium-Glucose Transporter 2 Inhibitors; Angiotensin Receptor Antagonists; Adrenergic beta-Antagonists; Diuretics; Cardiac Resynchronization Therapy">
+
+    <div class="card-header">
+      <span class="card-condition-title">Heart Failure</span>
+      <span class="card-category-tag">Cardiology</span>
+      <div class="card-mesh">
+        <button class="mesh-toggle" onclick="toggleMesh(this)">▸ MeSH terms</button>
+        <div class="mesh-terms">Heart Failure · Heart Failure, Systolic (HFrEF) · Heart Failure, Diastolic (HFpEF) · Stroke Volume · Ventricular Dysfunction, Left · Sodium-Glucose Transporter 2 Inhibitors · Angiotensin Receptor-Neprilysin Inhibitors · Adrenergic beta-Antagonists · Diuretics · Cardiac Resynchronization Therapy · Mineralocorticoid Receptor Antagonists</div>
+      </div>
+    </div>
+
+    <div class="guideline-row">
+      <div class="row-region"><span>US</span></div>
+      <div class="row-body">
+        <div class="row-title">2022 AHA/ACC/HFSA Guideline for the Management of Heart Failure</div>
+        <div class="row-meta">
+          <span class="year-badge">2022</span>
+          <span class="row-bodies">AHA / ACC / Heart Failure Society of America</span>
+          <span class="row-note">Replaces 2013 · irregular cycle</span>
+        </div>
+        <div class="row-evidence">
+          <span class="ev-label">Data range: </span><span class="ev-researching">being researched</span><span class="ev-sep">·</span><span class="ev-label">Published: </span><span class="ev-dates">Apr 1, 2022</span>
+        </div>
+      </div>
+      <div class="row-links">
+        <a href="https://doi.org/10.1016/j.jacc.2021.12.012" target="_blank" title="Paywalled — JACC / Circulation">Full Guideline ⚠</a>
+        <a href="https://professional.heart.org/en/science-news/2022-guideline-for-the-management-of-heart-failure" target="_blank" class="soc">AHA</a>
+        <a href="https://www.acc.org/Latest-in-Cardiology/Journal-Scans/2022/04/01/18/25/2022-AHA-ACC-HFSA-Guideline" target="_blank" class="soc">ACC</a>
+        <div class="row-verified">Verified Mar 2026</div>
+      </div>
+    </div>
+
+    <div class="guideline-row eu-row">
+      <div class="row-region eu"><span>EU</span></div>
+      <div class="row-body">
+        <div class="row-title">2023 Focused Update of the 2021 ESC Guidelines for the Diagnosis and Treatment of Acute and Chronic Heart Failure</div>
+        <div class="row-meta">
+          <span class="year-badge" style="background:var(--eu-col)">2023</span>
+          <span class="row-bodies">ESC / Heart Failure Association</span>
+          <span class="row-note">Focused update · base guideline 2021 · irregular cycle</span>
+        </div>
+        <div class="row-evidence">
+          <span class="ev-label">Data range: </span><span class="ev-researching">2021</span><span class="ev-dates"> – Mar 2023</span><span class="ev-sep">·</span><span class="ev-label">Published: </span><span class="ev-dates">Aug 25, 2023</span><span class="ev-sep">·</span><span class="ev-label">Corrected: </span><span class="ev-dates">Jan 1, 2024</span>
+        </div>
+      </div>
+      <div class="row-links">
+        <a href="https://doi.org/10.1093/eurheartj/ehad195" target="_blank" title="Free — European Heart Journal / Oxford Academic">Full Guideline</a>
+        <a href="https://www.escardio.org/Guidelines/Clinical-Practice-Guidelines/Acute-and-Chronic-Heart-Failure" target="_blank" class="soc">ESC</a>
+        <div class="row-verified">Verified Mar 2026</div>
+      </div>
+    </div>
+
+    <div class="card-analysis-bar">
+      <button class="analysis-toggle" onclick="toggleAnalysis(this)"><span>▸</span>&nbsp; Analysis &amp; Context</button>
+      <div class="analysis-panel">
+        <div class="analysis-section">
+          <div class="analysis-heading">Key Recommendations (EU 2023 Focused Update)</div>
+          <div class="analysis-body">
+            <strong>SGLT2 inhibitors for HFmrEF (Class I, Level A):</strong> Dapagliflozin or empagliflozin now recommended for symptomatic HFmrEF (LVEF 41–49%) to reduce HF hospitalization or CV death. Based on EMPEROR-Preserved and DELIVER trials and meta-analysis showing 20% reduction in the composite endpoint. Note: benefit was driven by reduction in HF hospitalizations, not CV death individually.<br><br>
+            <strong>SGLT2 inhibitors for HFpEF (Class I, Level A):</strong> Same recommendation for symptomatic HFpEF (LVEF ≥50%). This is the first Class I disease-modifying therapy for HFpEF — a landmark change, as prior trials with ACE-I, ARB, MRA, and ARNI all failed their primary endpoints in this population.<br><br>
+            <strong>Acute HF — rapid up-titration (Class I, Level B):</strong> Based on STRONG-HF trial. Intensive strategy of initiating and rapidly up-titrating evidence-based therapies (ACE-I/ARB/ARNI, beta-blockers, MRA) before discharge and during frequent follow-up in first 6 weeks post-discharge. Reduced HF rehospitalization by 44% (aRR 0.56). Important caveats: selected population (elevated NT-proBNP with >10% decline), no SGLT2 inhibitors in the protocol (though now recommended alongside).<br><br>
+            <strong>CKD + T2DM — HF prevention:</strong> SGLT2 inhibitors (Class I, Level A) and finerenone (Class I, Level A) both recommended to reduce HF hospitalization risk in patients with T2DM and CKD. Based on DAPA-CKD, EMPA-KIDNEY, FIDELIO-DKD, FIGARO-DKD trials.<br><br>
+            <strong>Iron deficiency:</strong> IV iron supplementation recommended (Class I, Level A) for symptom relief in HFrEF/HFmrEF with iron deficiency. IV ferric carboxymaltose or ferric derisomaltose should be considered (Class IIa, Level A) to reduce HF hospitalizations. Based on IRONMAN, AFFIRM-AHF, and meta-analyses.<br><br>
+            <strong>Diuretics (no new recommendation):</strong> ADVOR (acetazolamide) and CLOROTIC (hydrochlorothiazide add-on) showed improved decongestion but no outcomes benefit — further data needed before guideline endorsement.
+          </div>
+        </div>
+        <div class="analysis-section">
+          <div class="analysis-heading">US vs EU Differences</div>
+          <div class="analysis-body analysis-placeholder">— to be completed once US 2022 AHA/ACC/HFSA guideline is reviewed in detail —</div>
+        </div>
+        <div class="analysis-section">
+          <div class="analysis-heading">Considerations &amp; Emerging Evidence</div>
+          <div class="analysis-body">
+            <strong>Correction notice:</strong> A correction was published Jan 1, 2024 (doi: 10.1093/eurheartj/ehad613).<br><br>
+            <strong>Focused update, not full replacement:</strong> All 2021 ESC HF Guidelines recommendations not explicitly changed remain in effect. The base guideline (doi: 10.1093/eurheartj/ehab368) should be read alongside this update.<br><br>
+            <strong>HFpEF terminology:</strong> The Task Force discussed changing "HFpEF" to "HFnEF" (HF with normal EF) but decided to defer this to the next full guideline update.<br><br>
+            <strong>SGLT2i nuance:</strong> Both HFmrEF and HFpEF recommendations note that the composite endpoint benefit was driven by HF hospitalization reduction, with no statistically significant reduction in CV death alone — though a pooled analysis of dapagliflozin data (DAPA-HF + DELIVER) did show reduced CV death across the full EF spectrum.
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── ATRIAL FIBRILLATION ── -->
+  <div class="condition-card"
+       data-category="cardio"
+       data-topic="atrial fibrillation AFib anticoagulation stroke ablation rhythm rate control CHA2DS2"
+       data-mesh="Atrial Fibrillation; Anticoagulants; Stroke; Catheter Ablation; Anti-Arrhythmia Agents; Thromboembolism; Atrial Flutter; Left Atrial Appendage">
+
+    <div class="card-header">
+      <span class="card-condition-title">Atrial Fibrillation</span>
+      <span class="card-category-tag">Cardiology</span>
+      <div class="card-mesh">
+        <button class="mesh-toggle" onclick="toggleMesh(this)">▸ MeSH terms</button>
+        <div class="mesh-terms">Atrial Fibrillation · Anticoagulants · Stroke · Catheter Ablation · Anti-Arrhythmia Agents · Thromboembolism · Atrial Flutter · Left Atrial Appendage · CHA2DS2-VASc Score · Direct Oral Anticoagulants</div>
+      </div>
+    </div>
+
+    <div class="guideline-row">
+      <div class="row-region"><span>US</span></div>
+      <div class="row-body">
+        <div class="row-title">2023 ACC/AHA/ACCP/HRS Guideline for the Diagnosis and Management of Atrial Fibrillation</div>
+        <div class="row-meta">
+          <span class="year-badge">2023</span>
+          <span class="row-bodies">ACC / AHA / ACCP / Heart Rhythm Society</span>
+          <span class="row-note">Replaces 2014/2019 · irregular cycle</span>
+        </div>
+        <div class="row-evidence">
+          <span class="ev-label">Data range: </span><span class="ev-dates">May 12 – Nov 3, 2022</span><span class="ev-sep">·</span><span class="ev-label">Published: </span><span class="ev-dates">Nov 30, 2023</span>
+        </div>
+      </div>
+      <div class="row-links">
+        <a href="https://doi.org/10.1161/CIR.0000000000001193" target="_blank" title="Free via PubMed Central">Full Guideline</a>
+        <a href="https://professional.heart.org/en/science-news/2023-guideline-for-the-diagnosis-and-management-of-atrial-fibrillation" target="_blank" class="soc">AHA</a>
+        <a href="https://www.acc.org/Latest-in-Cardiology/Journal-Scans/2023/11/30/13/32/2023-ACC-AHA-ACCP-HRS-Guideline-AFib" target="_blank" class="soc">ACC</a>
+        <div class="row-verified">Verified Mar 2026</div>
+      </div>
+    </div>
+
+    <div class="guideline-row eu-row">
+      <div class="row-region eu"><span>EU</span></div>
+      <div class="row-body">
+        <div class="row-title">2024 ESC Guidelines for the Management of Atrial Fibrillation (developed with EACTS)</div>
+        <div class="row-meta">
+          <span class="year-badge" style="background:var(--eu-col)">2024</span>
+          <span class="row-bodies">ESC / European Association for Cardio-Thoracic Surgery</span>
+          <span class="row-note">Replaces 2020 · introduces AF-CARE framework · irregular cycle</span>
+        </div>
+        <div class="row-evidence">
+          <span class="ev-label">Data range: </span><span class="ev-researching">being researched</span><span class="ev-sep">·</span><span class="ev-label">Published: </span><span class="ev-dates">Sep 29, 2024</span>
+        </div>
+      </div>
+      <div class="row-links">
+        <a href="https://doi.org/10.1093/eurheartj/ehae176" target="_blank" title="Free — European Heart Journal / Oxford Academic">Full Guideline</a>
+        <a href="https://www.escardio.org/Guidelines/Clinical-Practice-Guidelines/Atrial-Fibrillation" target="_blank" class="soc">ESC</a>
+        <div class="row-verified">Verified Mar 2026</div>
+      </div>
+    </div>
+
+    <div class="card-analysis-bar">
+      <button class="analysis-toggle" onclick="toggleAnalysis(this)"><span>▸</span>&nbsp; Analysis &amp; Context</button>
+      <div class="analysis-panel">
+        <div class="analysis-section">
+          <div class="analysis-heading">Key Recommendations</div>
+          <div class="analysis-body analysis-placeholder">— to be completed —</div>
+        </div>
+        <div class="analysis-section">
+          <div class="analysis-heading">US vs EU Differences</div>
+          <div class="analysis-body analysis-placeholder">— to be completed —</div>
+        </div>
+        <div class="analysis-section">
+          <div class="analysis-heading">Considerations &amp; Emerging Evidence</div>
+          <div class="analysis-body analysis-placeholder">— to be completed —</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── ACUTE CORONARY SYNDROMES ── -->
+  <div class="condition-card"
+       data-category="cardio"
+       data-topic="acute coronary syndrome STEMI NSTEMI myocardial infarction heart attack PCI angioplasty antiplatelet"
+       data-mesh="Acute Coronary Syndrome; Myocardial Infarction; ST Elevation Myocardial Infarction; Percutaneous Coronary Intervention; Anticoagulants; Platelet Aggregation Inhibitors; Fibrinolytic Agents; Coronary Angiography">
+
+    <div class="card-header">
+      <span class="card-condition-title">Acute Coronary Syndromes (STEMI / NSTEMI)</span>
+      <span class="card-category-tag">Cardiology</span>
+      <div class="card-mesh">
+        <button class="mesh-toggle" onclick="toggleMesh(this)">▸ MeSH terms</button>
+        <div class="mesh-terms">Acute Coronary Syndrome · Myocardial Infarction · ST Elevation Myocardial Infarction · Non-ST Elevation Myocardial Infarction · Percutaneous Coronary Intervention · Anticoagulants · Platelet Aggregation Inhibitors · Fibrinolytic Agents · Coronary Angiography · Dual Antiplatelet Therapy</div>
+      </div>
+    </div>
+
+    <div class="guideline-row">
+      <div class="row-region"><span>US</span></div>
+      <div class="row-body">
+        <div class="row-title">2025 ACC/AHA/ACEP/NAEMSP/SCAI Guideline for the Management of Patients With Acute Coronary Syndromes</div>
+        <div class="row-meta">
+          <span class="year-badge">2025</span>
+          <span class="row-bodies">ACC / AHA / ACEP / NAEMSP / SCAI</span>
+          <span class="row-note">Replaces 2013 STEMI &amp; 2014 NSTEMI guidelines · irregular cycle</span>
+        </div>
+        <div class="row-evidence">
+          <span class="ev-label">Data range: </span><span class="ev-dates">Jul 2023 – Apr 2024</span><span class="ev-sep">·</span><span class="ev-label">Published: </span><span class="ev-dates">Feb 27, 2025</span>
+        </div>
+      </div>
+      <div class="row-links">
+        <a href="https://doi.org/10.1161/CIR.0000000000001309" target="_blank" title="Paywalled — Circulation">Full Guideline ⚠</a>
+        <a href="https://professional.heart.org/en/science-news/2025-guideline-for-the-management-of-patients-with-acute-coronary-syndromes" target="_blank" class="soc">AHA</a>
+        <a href="https://www.acc.org/Guidelines" target="_blank" class="soc">ACC</a>
+        <div class="row-verified">Verified Mar 2026</div>
+      </div>
+    </div>
+
+    <div class="guideline-row eu-row">
+      <div class="row-region eu"><span>EU</span></div>
+      <div class="row-body">
+        <div class="row-title">2023 ESC Guidelines for the Management of Acute Coronary Syndromes</div>
+        <div class="row-meta">
+          <span class="year-badge" style="background:var(--eu-col)">2023</span>
+          <span class="row-bodies">ESC</span>
+          <span class="row-note">First unified ACS guideline — combines STEMI &amp; NSTEMI · replaces 2017/2020 · irregular cycle</span>
+        </div>
+        <div class="row-evidence">
+          <span class="ev-label">Data range: </span><span class="ev-researching">being researched</span><span class="ev-sep">·</span><span class="ev-label">Published: </span><span class="ev-dates">Aug 25, 2023</span>
+        </div>
+      </div>
+      <div class="row-links">
+        <a href="https://doi.org/10.1093/eurheartj/ehad191" target="_blank" title="Free — European Heart Journal / Oxford Academic">Full Guideline</a>
+        <a href="https://www.escardio.org/Guidelines/Clinical-Practice-Guidelines/Acute-Coronary-Syndromes" target="_blank" class="soc">ESC</a>
+        <div class="row-verified">Verified Mar 2026</div>
+      </div>
+    </div>
+
+    <div class="card-analysis-bar">
+      <button class="analysis-toggle" onclick="toggleAnalysis(this)"><span>▸</span>&nbsp; Analysis &amp; Context</button>
+      <div class="analysis-panel">
+        <div class="analysis-section">
+          <div class="analysis-heading">Key Recommendations</div>
+          <div class="analysis-body analysis-placeholder">— to be completed —</div>
+        </div>
+        <div class="analysis-section">
+          <div class="analysis-heading">US vs EU Differences</div>
+          <div class="analysis-body analysis-placeholder">— to be completed —</div>
+        </div>
+        <div class="analysis-section">
+          <div class="analysis-heading">Considerations &amp; Emerging Evidence</div>
+          <div class="analysis-body analysis-placeholder">— to be completed —</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── CHRONIC CORONARY DISEASE ── -->
+  <div class="condition-card"
+       data-category="cardio"
+       data-topic="chronic coronary disease stable angina ischemic heart disease coronary artery disease secondary prevention"
+       data-mesh="Coronary Disease; Angina, Stable; Myocardial Ischemia; Secondary Prevention; Coronary Artery Bypass; Percutaneous Coronary Intervention; Anti-Anginal Agents; Platelet Aggregation Inhibitors">
+
+    <div class="card-header">
+      <span class="card-condition-title">Chronic Coronary Disease / Stable Ischemic Heart Disease</span>
+      <span class="card-category-tag">Cardiology</span>
+      <div class="card-mesh">
+        <button class="mesh-toggle" onclick="toggleMesh(this)">▸ MeSH terms</button>
+        <div class="mesh-terms">Coronary Disease · Angina, Stable · Myocardial Ischemia · Secondary Prevention · Coronary Artery Bypass · Percutaneous Coronary Intervention · Anti-Anginal Agents · Platelet Aggregation Inhibitors · Cardiac Rehabilitation</div>
+      </div>
+    </div>
+
+    <div class="guideline-row">
+      <div class="row-region"><span>US</span></div>
+      <div class="row-body">
+        <div class="row-title">2023 AHA/ACC/ACCP/ASPC/NLA/PCNA Guideline for the Management of Patients With Chronic Coronary Disease</div>
+        <div class="row-meta">
+          <span class="year-badge">2023</span>
+          <span class="row-bodies">AHA / ACC / ACCP / ASPC / NLA / PCNA</span>
+          <span class="row-note">Replaces 2012 stable ischemic heart disease guideline · irregular cycle</span>
+        </div>
+        <div class="row-evidence">
+          <span class="ev-label">Data range: </span><span class="ev-dates">Sep 2021 – May 2022</span><span class="ev-sep">·</span><span class="ev-label">Published: </span><span class="ev-dates">Jul 20, 2023</span>
+        </div>
+      </div>
+      <div class="row-links">
+        <a href="https://doi.org/10.1161/CIR.0000000000001168" target="_blank" title="Paywalled — Circulation">Full Guideline ⚠</a>
+        <a href="https://professional.heart.org/en/science-news/2023-guideline-for-the-management-of-patients-with-chronic-coronary-disease" target="_blank" class="soc">AHA</a>
+        <a href="https://www.acc.org/Guidelines" target="_blank" class="soc">ACC</a>
+        <div class="row-verified">Verified Mar 2026</div>
+      </div>
+    </div>
+
+    <div class="guideline-row eu-row">
+      <div class="row-region eu"><span>EU</span></div>
+      <div class="row-body">
+        <div class="row-title">2024 ESC Guidelines for the Management of Chronic Coronary Syndromes</div>
+        <div class="row-meta">
+          <span class="year-badge" style="background:var(--eu-col)">2024</span>
+          <span class="row-bodies">ESC — endorsed by EACTS</span>
+          <span class="row-note">Replaces 2019 · introduces ANOCA/INOCA framework &amp; risk-factor-weighted clinical likelihood model · irregular cycle</span>
+        </div>
+        <div class="row-evidence">
+          <span class="ev-label">Data range: </span><span class="ev-researching">being researched</span><span class="ev-sep">·</span><span class="ev-label">Published: </span><span class="ev-dates">Sep 29, 2024</span>
+        </div>
+      </div>
+      <div class="row-links">
+        <a href="https://doi.org/10.1093/eurheartj/ehae177" target="_blank" title="Free — European Heart Journal / Oxford Academic">Full Guideline</a>
+        <a href="https://www.escardio.org/guidelines/clinical-practice-guidelines/all-esc-practice-guidelines/chronic-coronary-syndromes/" target="_blank" class="soc">ESC</a>
+        <div class="row-verified">Verified Mar 2026</div>
+      </div>
+    </div>
+
+    <div class="card-analysis-bar">
+      <button class="analysis-toggle" onclick="toggleAnalysis(this)"><span>▸</span>&nbsp; Analysis &amp; Context</button>
+      <div class="analysis-panel">
+        <div class="analysis-section">
+          <div class="analysis-heading">Key Recommendations</div>
+          <div class="analysis-body analysis-placeholder">— to be completed —</div>
+        </div>
+        <div class="analysis-section">
+          <div class="analysis-heading">US vs EU Differences</div>
+          <div class="analysis-body analysis-placeholder">— to be completed —</div>
+        </div>
+        <div class="analysis-section">
+          <div class="analysis-heading">Considerations &amp; Emerging Evidence</div>
+          <div class="analysis-body analysis-placeholder">— to be completed —</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ══════════════════════════════════════
+       METABOLIC
+  ══════════════════════════════════════ -->
+  <div class="section-heading">Metabolic</div>
+
+  <!-- ── DIABETES ── -->
+  <div class="condition-card"
+       data-category="metabolic"
+       data-topic="diabetes glycemia insulin glucose GLP-1 SGLT2 HbA1c metformin"
+       data-mesh="Diabetes Mellitus Type 2; Diabetes Mellitus Type 1; Blood Glucose; Hypoglycemic Agents; Insulin; Cardiovascular Diseases; Kidney Diseases; Obesity; Glucagon-Like Peptide-1 Receptor Agonists; Sodium-Glucose Transporter 2 Inhibitors; Diabetic Nephropathies; Diabetic Retinopathy; HbA1c">
+
+    <div class="card-header">
+      <span class="card-condition-title">Diabetes — Standards of Care</span>
+      <span class="card-category-tag">Metabolic</span>
+      <div class="card-mesh">
+        <button class="mesh-toggle" onclick="toggleMesh(this)">▸ MeSH terms</button>
+        <div class="mesh-terms">Diabetes Mellitus, Type 2 · Diabetes Mellitus, Type 1 · Blood Glucose · Hypoglycemic Agents · Insulin · Cardiovascular Diseases · Kidney Diseases · Obesity · Glucagon-Like Peptide-1 Receptor Agonists · Sodium-Glucose Transporter 2 Inhibitors · Diabetic Nephropathies · Diabetic Retinopathy · HbA1c</div>
+      </div>
+    </div>
+
+    <div class="guideline-row">
+      <div class="row-region"><span>US</span></div>
+      <div class="row-body">
+        <div class="row-title">ADA Standards of Care in Diabetes — 2026</div>
+        <div class="row-meta">
+          <span class="year-badge">2026</span>
+          <span class="row-bodies">ADA</span>
+          <span class="row-note">Updated annually every January · no direct EU equivalent</span>
+        </div>
+        <div class="row-evidence">
+          <span class="ev-label">Data range: </span><span class="ev-researching">being researched</span><span class="ev-sep">·</span><span class="ev-label">Published: </span><span class="ev-dates">Jan 2026</span>
+        </div>
+      </div>
+      <div class="row-links">
+        <a href="https://doi.org/10.2337/dc26-Sint" target="_blank" title="Free — Diabetes Care supplement">Full Guideline</a>
+        <a href="https://professional.diabetes.org/standards-of-care" target="_blank" class="soc">ADA</a>
+        <div class="row-verified">Verified Mar 2026</div>
+      </div>
+    </div>
+
+    <div class="card-analysis-bar">
+      <button class="analysis-toggle" onclick="toggleAnalysis(this)"><span>▸</span>&nbsp; Analysis &amp; Context</button>
+      <div class="analysis-panel">
+        <div class="analysis-section">
+          <div class="analysis-heading">Key Recommendations</div>
+          <div class="analysis-body analysis-placeholder">— to be completed —</div>
+        </div>
+        <div class="analysis-section">
+          <div class="analysis-heading">Considerations &amp; Emerging Evidence</div>
+          <div class="analysis-body analysis-placeholder">— to be completed —</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ══════════════════════════════════════
+       RENAL & STRUCTURAL
+  ══════════════════════════════════════ -->
+  <div class="section-heading">Renal &amp; Structural</div>
+
+  <!-- ── CHRONIC KIDNEY DISEASE ── -->
+  <div class="condition-card"
+       data-category="renal"
+       data-topic="chronic kidney disease CKD eGFR albuminuria SGLT2 finerenone nephrology renal"
+       data-mesh="Renal Insufficiency, Chronic; Glomerular Filtration Rate; Albuminuria; Sodium-Glucose Transporter 2 Inhibitors; Cardiovascular Diseases; Diabetes Mellitus, Type 2; Hypertension; Mineralocorticoid Receptor Antagonists; Kidney Failure">
+
+    <div class="card-header">
+      <span class="card-condition-title">Chronic Kidney Disease (CKD)</span>
+      <span class="card-category-tag">Renal</span>
+      <div class="card-mesh">
+        <button class="mesh-toggle" onclick="toggleMesh(this)">▸ MeSH terms</button>
+        <div class="mesh-terms">Renal Insufficiency, Chronic · Glomerular Filtration Rate · Albuminuria · Sodium-Glucose Transporter 2 Inhibitors · Cardiovascular Diseases · Diabetes Mellitus, Type 2 · Hypertension · Mineralocorticoid Receptor Antagonists · Kidney Failure, Chronic · Finerenone · eGFR · CKD-EPI equation</div>
+      </div>
+    </div>
+
+    <div class="guideline-row">
+      <div class="row-region glb"><span>GLB</span></div>
+      <div class="row-body">
+        <div class="row-title">KDIGO 2024 Clinical Practice Guideline for the Evaluation and Management of Chronic Kidney Disease</div>
+        <div class="row-meta">
+          <span class="year-badge" style="background:var(--glb-col)">2024</span>
+          <span class="row-bodies">KDIGO — Kidney Disease: Improving Global Outcomes</span>
+          <span class="row-note">Replaces 2012 · global standard · free open access (CC BY-NC-ND) · no separate US/EU versions</span>
+        </div>
+        <div class="row-evidence">
+          <span class="ev-label">Data range: </span><span class="ev-researching">through Jul 2023</span><span class="ev-sep">·</span><span class="ev-label">Published: </span><span class="ev-dates">Apr 2024</span>
+        </div>
+      </div>
+      <div class="row-links">
+        <a href="https://doi.org/10.1016/j.kint.2023.10.018" target="_blank" title="Free — Kidney International (CC BY-NC-ND)">Full Guideline</a>
+        <a href="https://kdigo.org/guidelines/ckd-evaluation-and-management/" target="_blank" class="soc">KDIGO</a>
+        <div class="row-verified">Verified Mar 2026</div>
+      </div>
+    </div>
+
+    <div class="card-analysis-bar">
+      <button class="analysis-toggle" onclick="toggleAnalysis(this)"><span>▸</span>&nbsp; Analysis &amp; Context</button>
+      <div class="analysis-panel">
+        <div class="analysis-section">
+          <div class="analysis-heading">Key Recommendations</div>
+          <div class="analysis-body analysis-placeholder">— to be completed —</div>
+        </div>
+        <div class="analysis-section">
+          <div class="analysis-heading">Considerations &amp; Emerging Evidence</div>
+          <div class="analysis-body analysis-placeholder">— to be completed —</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── VALVULAR HEART DISEASE ── -->
+  <div class="condition-card"
+       data-category="structural"
+       data-topic="valvular heart disease aortic stenosis mitral regurgitation TAVI TAVR valve replacement tricuspid"
+       data-mesh="Heart Valve Diseases; Aortic Valve Stenosis; Mitral Valve Insufficiency; Aortic Valve Insufficiency; Tricuspid Valve Insufficiency; Transcatheter Aortic Valve Replacement; Heart Valve Prosthesis; Cardiac Surgical Procedures">
+
+    <div class="card-header">
+      <span class="card-condition-title">Valvular Heart Disease</span>
+      <span class="card-category-tag">Structural</span>
+      <div class="card-mesh">
+        <button class="mesh-toggle" onclick="toggleMesh(this)">▸ MeSH terms</button>
+        <div class="mesh-terms">Heart Valve Diseases · Aortic Valve Stenosis · Mitral Valve Insufficiency · Aortic Valve Insufficiency · Tricuspid Valve Insufficiency · Transcatheter Aortic Valve Replacement · Heart Valve Prosthesis · Cardiac Surgical Procedures · Echocardiography</div>
+      </div>
+    </div>
+
+    <div class="guideline-row">
+      <div class="row-region"><span>US</span></div>
+      <div class="row-body">
+        <div class="row-title">2020 ACC/AHA Guideline for the Management of Patients With Valvular Heart Disease</div>
+        <div class="row-meta">
+          <span class="year-badge">2020</span>
+          <span class="row-bodies">ACC / AHA</span>
+          <span class="row-note">Current US standard · no newer full guideline released · note EU 2025 is more current</span>
+        </div>
+        <div class="row-evidence">
+          <span class="ev-label">Data range: </span><span class="ev-researching">through Mar 2020</span><span class="ev-sep">·</span><span class="ev-label">Published: </span><span class="ev-dates">Feb 2021</span>
+        </div>
+      </div>
+      <div class="row-links">
+        <a href="https://doi.org/10.1161/CIR.0000000000000923" target="_blank" title="Paywalled — Circulation">Full Guideline ⚠</a>
+        <a href="https://professional.heart.org/en/science-news/2020-guideline-for-the-management-of-patients-with-valvular-heart-disease" target="_blank" class="soc">AHA</a>
+        <a href="https://www.acc.org/Guidelines" target="_blank" class="soc">ACC</a>
+        <div class="row-verified">Verified Mar 2026</div>
+      </div>
+    </div>
+
+    <div class="guideline-row eu-row">
+      <div class="row-region eu"><span>EU</span></div>
+      <div class="row-body">
+        <div class="row-title">2025 ESC/EACTS Guidelines for the Management of Valvular Heart Disease</div>
+        <div class="row-meta">
+          <span class="year-badge" style="background:var(--eu-col)">2025</span>
+          <span class="row-bodies">ESC / European Association for Cardio-Thoracic Surgery</span>
+          <span class="row-note">Replaces 2021 · expands TAVI indications · reduces age cut-off to 75 · irregular cycle</span>
+        </div>
+        <div class="row-evidence">
+          <span class="ev-label">Data range: </span><span class="ev-researching">being researched</span><span class="ev-sep">·</span><span class="ev-label">Published: </span><span class="ev-dates">Aug 29, 2025</span>
+        </div>
+      </div>
+      <div class="row-links">
+        <a href="https://doi.org/10.1093/eurheartj/ehaf194" target="_blank" title="Free — European Heart Journal / Oxford Academic">Full Guideline</a>
+        <a href="https://www.escardio.org/guidelines/clinical-practice-guidelines/all-esc-practice-guidelines/valvular-heart-disease/" target="_blank" class="soc">ESC</a>
+        <div class="row-verified">Verified Mar 2026</div>
+      </div>
+    </div>
+
+    <div class="card-analysis-bar">
+      <button class="analysis-toggle" onclick="toggleAnalysis(this)"><span>▸</span>&nbsp; Analysis &amp; Context</button>
+      <div class="analysis-panel">
+        <div class="analysis-section">
+          <div class="analysis-heading">Key Recommendations</div>
+          <div class="analysis-body analysis-placeholder">— to be completed —</div>
+        </div>
+        <div class="analysis-section">
+          <div class="analysis-heading">US vs EU Differences</div>
+          <div class="analysis-body analysis-placeholder">— to be completed — Note: US guideline is 2020; EU is 2025 — a 5-year gap with significant new TAVI trial data in between.</div>
+        </div>
+        <div class="analysis-section">
+          <div class="analysis-heading">Considerations &amp; Emerging Evidence</div>
+          <div class="analysis-body analysis-placeholder">— to be completed —</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── Footer ── -->
+  <div class="page-footer">
+    <strong>About this page:</strong> Guidelines verified manually approximately twice monthly. Each condition groups all relevant US and EU guidelines together for direct comparison. <strong>Full Guideline</strong> links go to the primary published DOI — free where available, paywalled where not (⚠). Society links (AHA, ACC, ESC, ADA…) go to that society's resource page for summaries, slide sets, and plain-language materials. MeSH terms support matching in the <a href="../">DOI Ref-Lookup</a> PubMed extension — feedback on missing terms welcome.<br><br>
+    <strong>US vs EU:</strong> ACC/AHA and ESC guidelines are independent and can differ significantly on thresholds and targets. Neither supersedes the other. Differences are noted inline and detailed in each Analysis &amp; Context section.<br><br>
+    <strong>Scope:</strong> Currently covers cardiovascular prevention (dyslipidemia, hypertension), cardiac conditions (heart failure, atrial fibrillation, ACS, chronic coronary disease), metabolic (diabetes), renal (CKD/KDIGO), and structural (valvular heart disease). Neurology (AAN), pulmonology (GOLD/GINA), and other specialties to be added progressively.<br><br>
+    Last update: <span style="font-family:var(--mono)">March 2026</span> &nbsp;·&nbsp; <a href="../">← DOI Ref-Lookup</a>
+  </div>
+
+</div><!-- /page-wrap -->
+
+<script>
+  // ── Region buttons ──
+  document.querySelectorAll('.filter-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      applyFilters();
+    });
+  });
+
+  document.getElementById('categorySelect').addEventListener('change', applyFilters);
+  document.getElementById('searchBox').addEventListener('input', applyFilters);
+
+  function applyFilters() {
+    const region   = document.querySelector('.filter-btn.active').dataset.region;
+    const category = document.getElementById('categorySelect').value;
+    const search   = document.getElementById('searchBox').value.toLowerCase().trim();
+
+    document.querySelectorAll('.condition-card').forEach(card => {
+      const cardCat   = card.dataset.category || '';
+      const cardTopic = (card.dataset.topic || '').toLowerCase();
+      const cardMesh  = (card.dataset.mesh  || '').toLowerCase();
+      const cardTitle = (card.querySelector('.card-condition-title')?.textContent || '').toLowerCase();
+
+      const passCategory = category === 'all' || cardCat === category;
+      const passSearch   = !search || cardTitle.includes(search) || cardTopic.includes(search) || cardMesh.includes(search);
+
+      // Region: show/hide individual rows within card
+      card.querySelectorAll('.guideline-row').forEach(row => {
+        const isUS  = !row.classList.contains('eu-row') && !row.querySelector('.row-region.glb');
+        const isEU  =  row.classList.contains('eu-row');
+        const isGLB =  !!row.querySelector('.row-region.glb');
+        if (region === 'all') {
+          row.style.display = '';
+        } else if (region === 'us') {
+          row.style.display = (isUS || isGLB) ? '' : 'none';
+        } else if (region === 'eu') {
+          row.style.display = (isEU || isGLB) ? '' : 'none';
+        }
+      });
+
+      card.classList.toggle('hidden', !(passCategory && passSearch));
+    });
+
+    // Section headings — hide if no visible cards follow
+    document.querySelectorAll('.section-heading').forEach(h => {
+      let sib = h.nextElementSibling;
+      let anyVisible = false;
+      while (sib && !sib.classList.contains('section-heading') && !sib.classList.contains('page-footer')) {
+        if (sib.classList.contains('condition-card') && !sib.classList.contains('hidden')) anyVisible = true;
+        sib = sib.nextElementSibling;
+      }
+      h.style.display = anyVisible ? '' : 'none';
+    });
+  }
+
+  function toggleMesh(btn) {
+    const terms = btn.nextElementSibling;
+    const open  = terms.classList.toggle('open');
+    btn.textContent = (open ? '▾' : '▸') + ' MeSH terms';
+  }
+
+  function toggleAnalysis(btn) {
+    const panel = btn.nextElementSibling;
+    const open  = panel.classList.toggle('open');
+    btn.querySelector('span').textContent = open ? '▾' : '▸';
+  }
+</script>
+
+</body>
+</html>
