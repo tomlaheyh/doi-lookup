@@ -226,6 +226,13 @@ async function handleDOILookup(doiInput) {
       ...doiResult,
       ...pubmedResult
     };
+
+    // Bridge PubMed iCite field names → _icite* names used by display code
+    if (allData.pubmedCitationCountSource === 'iCite') {
+      allData._iciteCitations = allData.pubmedCitationCount ?? null;
+      allData._iciteRcr = allData.pubmedRCR && allData.pubmedRCR !== '-'
+        ? allData.pubmedRCR : null;
+    }
     
     console.log('[DOI Lookup] All data fetched, checking external services...');
     if (statusEl) statusEl.innerHTML = `<span class="spinner"></span>Enriching metadata: ${doi}`;
@@ -335,7 +342,7 @@ function showDOIModal(result, linksHtml) {
   // ========================================
   // SUMMARY HEADER BLOCK (no title)
   // ========================================
-  const summaryTitle  = result.doiOrgTitle   || result.raTitle   || null;
+  const summaryTitle  = result.doiOrgTitle   || result.raTitle   || result.pubmedTitle || null;
   const summaryDate   = result.doiOrgPublishedDate || result.raPublishedDate || result.doiOrgEarliestTimestamp || result.pubmedPublishDate || result.pubmedYear || null;
   const summaryPublisher = result.doiOrgPublisher || result.raPublisher || null;
   const summaryJournal   = result.doiOrgJournal   || result.raJournal   || result.pubmedJournalFull || result.pubmedJournal || null;
@@ -783,7 +790,7 @@ function showDOIModal(result, linksHtml) {
   // Altmetric | CORE | Dimensions | Google Scholar links line - always show
   {
     const altUrl     = `https://www.altmetric.com/details/doi/${summaryDoi}`;
-    const coreUrl    = `https://core.ac.uk`;
+    const coreUrl    = `https://core.ac.uk/search/?q=${encodeURIComponent('doi:"' + summaryDoi + '"')}`;
     const dimUrl     = `https://app.dimensions.ai/discover/publication?search_text=${encodeURIComponent(summaryDoi)}`;
     const scholarUrl = `https://scholar.google.com/scholar?q=${encodeURIComponent(summaryDoi)}`;
     html += `<div style="color: #555; font-size: 17px; font-weight: bold; margin-bottom: 6px;">`;
@@ -1017,8 +1024,8 @@ function showDOIModal(result, linksHtml) {
   }
 
   // Title
-  if (result.doiOrgTitle || result.raTitle) {
-    const title = result.doiOrgTitle || result.raTitle;
+  if (result.doiOrgTitle || result.raTitle || result.pubmedTitle) {
+    const title = result.doiOrgTitle || result.raTitle || result.pubmedTitle;
     html += '<div style="margin-bottom: 6px;">';
     html += '<span style="color: #666;">Title:</span> ';
     html += `<span style="color: #333;">${escapeHtml(title)}</span>`;
