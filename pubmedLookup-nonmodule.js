@@ -7,6 +7,17 @@ const PubMedLookup = {
    * @param {string} doi - The DOI to lookup in PubMed
    * @returns {Promise<Object>} - Object with all pubmed* prefixed fields
    */
+  // Helper: race a promise against a timeout (ms). Returns fallback on timeout.
+  _withTimeout(promise, ms, fallback = {}) {
+    return Promise.race([
+      promise,
+      new Promise(resolve => setTimeout(() => {
+        console.warn(`[PubMed] Timeout after ${ms}ms`);
+        resolve(fallback);
+      }, ms))
+    ]);
+  },
+
   async fetchPubMedData(doi) {
     const pubmedData = {
       pubmedFound: false,
@@ -16,8 +27,8 @@ const PubMedLookup = {
     try {
       console.log(`[PubMed] Starting lookup for DOI: ${doi}`);
 
-      // Step 1: Search for PMID by DOI
-      const pmid = await this.searchPubMedByDOI(doi);
+      // Step 1: Search for PMID by DOI (with 5s timeout)
+      const pmid = await this._withTimeout(this.searchPubMedByDOI(doi), 5000, null);
       if (!pmid) {
         console.log('[PubMed] DOI not found in PubMed');
         return pubmedData;
@@ -32,19 +43,16 @@ const PubMedLookup = {
       pubmedData.pubmedSimilarArticlesUrl = `https://pubmed.ncbi.nlm.nih.gov/?linkname=pubmed_pubmed&from_uid=${pmid}`;
       pubmedData.pubmedCitedByUrl = `https://pubmed.ncbi.nlm.nih.gov/?linkname=pubmed_pubmed_citedin&from_uid=${pmid}`;
 
-      // Step 3: Get eSummary data (fast summary info)
-      console.log('[PubMed] Fetching eSummary data...');
-      const eSummaryData = await this.getESummaryForPMID(pmid);
+      // Step 3: Run eSummary, iCite, and eFetch IN PARALLEL (each with 5s timeout)
+      // These are independent of each other and don't need to be sequential.
+      console.log('[PubMed] Fetching eSummary + iCite + eFetch in parallel...');
+      const [eSummaryData, iCiteData, eFetchData] = await Promise.all([
+        this._withTimeout(this.getESummaryForPMID(pmid), 5000, {}),
+        this._withTimeout(this.getICiteForSinglePMID(pmid), 5000, {}),
+        this._withTimeout(this.fetchPubMedDetails(pmid), 5000, {}),
+      ]);
       Object.assign(pubmedData, eSummaryData);
-
-      // Step 4: Get citation metrics from iCite (with fallback to Europe PMC)
-      console.log('[PubMed] Fetching citation metrics from iCite...');
-      const iCiteData = await this.getICiteForSinglePMID(pmid);
       Object.assign(pubmedData, iCiteData);
-
-      // Step 5: Get detailed metadata with eFetch (authors, abstract, MeSH)
-      console.log('[PubMed] Fetching detailed metadata with eFetch...');
-      const eFetchData = await this.fetchPubMedDetails(pmid);
       Object.assign(pubmedData, eFetchData);
 
       console.log('[PubMed] Lookup complete');

@@ -57,14 +57,28 @@
 
 const DOILookup = {
   /**
+   * Fetch with a timeout — returns null if the fetch takes longer than ms.
+   * Uses Promise.race instead of AbortController for broad browser compatibility.
+   */
+  _fetchWithTimeout(url, options = {}, ms = 8000) {
+    return Promise.race([
+      fetch(url, options),
+      new Promise((_, reject) =>
+        setTimeout(() => reject(new Error(`Timeout after ${ms}ms: ${url}`)), ms)
+      )
+    ]);
+  },
+
+  /**
    * Main lookup function - fetches data from all sources and extracts fields
    * @param {string} doi - Clean DOI string
+   * @param {object} [prefetchedRaData] - Optional pre-fetched RA data from validation step
    * @returns {object} Complete data object with all extracted fields
    */
-  async performLookup(doi) {
+  async performLookup(doi, prefetchedRaData) {
     try {
-      // Fetch all data sources in parallel
-      const [raData, handleData, contentNegData] = await this.fetchAllSources(doi);
+      // Fetch all data sources — reuse pre-fetched RA data if available
+      const [raData, handleData, contentNegData] = await this.fetchAllSources(doi, prefetchedRaData);
       
       // Extract all fields
       const extractedData = this.extractAllFields(doi, raData, handleData, contentNegData);
@@ -151,20 +165,24 @@ const DOILookup = {
    * their APIs provide richer data directly.
    * For all other RAs, fall back to handle + content negotiation.
    */
-  async fetchAllSources(doi) {
+  async fetchAllSources(doi, prefetchedRaData) {
     const raUrl = `https://doi.org/doiRA/${doi}`;
 
-    // Step 1: Always fetch RA first — needed to route everything else
-    let raData = null;
-    try {
-      const raResponse = await fetch(raUrl);
-      if (raResponse.ok) {
-        raData = await raResponse.json();
-      } else {
-        console.warn('RA fetch failed:', raResponse.status);
+    // Step 1: Use pre-fetched RA data if available, otherwise fetch
+    let raData = prefetchedRaData || null;
+    if (!raData) {
+      try {
+        const raResponse = await this._fetchWithTimeout(raUrl, {}, 6000);
+        if (raResponse.ok) {
+          raData = await raResponse.json();
+        } else {
+          console.warn('RA fetch failed:', raResponse.status);
+        }
+      } catch (e) {
+        console.warn('RA fetch error:', e.message);
       }
-    } catch (e) {
-      console.warn('RA fetch error:', e.message);
+    } else {
+      console.log('[DOI Lookup] Using pre-fetched RA data');
     }
 
     const ra = raData?.[0]?.RA || null;
@@ -181,22 +199,23 @@ const DOILookup = {
     const handleUrl = `https://doi.org/api/handles/${doi}`;
     const contentNegUrl = `https://doi.org/${doi}`;
 
-    const [handleResponse] = await Promise.all([
-      fetch(handleUrl)
-    ]);
-
     let handleData = null;
-    if (handleResponse.ok) {
-      handleData = await handleResponse.json();
-    } else {
-      console.warn('Handle fetch failed:', handleResponse.status);
+    try {
+      const handleResponse = await this._fetchWithTimeout(handleUrl, {}, 6000);
+      if (handleResponse.ok) {
+        handleData = await handleResponse.json();
+      } else {
+        console.warn('Handle fetch failed:', handleResponse.status);
+      }
+    } catch (e) {
+      console.warn('Handle fetch error:', e.message);
     }
 
     let contentNegData = null;
     try {
-      const contentNegResponse = await fetch(contentNegUrl, {
+      const contentNegResponse = await this._fetchWithTimeout(contentNegUrl, {
         headers: { 'Accept': 'application/citeproc+json' }
-      });
+      }, 6000);
       if (contentNegResponse.ok) {
         contentNegData = await contentNegResponse.json();
       } else {
@@ -217,7 +236,7 @@ const DOILookup = {
     const crossRefUrl = `https://api.crossref.org/works/${doi}`;
     
     try {
-      const response = await fetch(crossRefUrl);
+      const response = await this._fetchWithTimeout(crossRefUrl, {}, 8000);
       
       if (!response.ok) {
         console.warn('CrossRef fetch failed:', response.status);
@@ -240,7 +259,7 @@ const DOILookup = {
     const dataCiteUrl = `https://api.datacite.org/dois/${doi}`;
     
     try {
-      const response = await fetch(dataCiteUrl);
+      const response = await this._fetchWithTimeout(dataCiteUrl, {}, 8000);
       
       if (!response.ok) {
         console.warn('DataCite fetch failed:', response.status);
@@ -263,7 +282,7 @@ const DOILookup = {
     const jalcUrl = `https://api.japanlinkcenter.org/dois/${doi}`;
     
     try {
-      const response = await fetch(jalcUrl);
+      const response = await this._fetchWithTimeout(jalcUrl, {}, 8000);
       
       if (!response.ok) {
         console.warn('JaLC fetch failed:', response.status);
@@ -286,7 +305,7 @@ const DOILookup = {
     const medraUrl = `https://api.medra.org/metadata/${doi}`;
     
     try {
-      const response = await fetch(medraUrl);
+      const response = await this._fetchWithTimeout(medraUrl, {}, 8000);
       
       if (!response.ok) {
         console.warn('mEDRA fetch failed:', response.status);

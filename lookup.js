@@ -162,9 +162,43 @@ async function handleDOILookup(doiInput) {
 
   try {
     console.log(`[DOI Lookup] Starting lookup for: ${doi}`);
+
+    // ── Fast pre-flight: validate DOI exists via doi.org/doiRA (1-2 seconds) ──
+    // This gives the user immediate feedback and avoids a 16+ second wait on bad DOIs.
+    const statusEl = document.getElementById('status');
+    if (statusEl) statusEl.innerHTML = `<span class="spinner"></span>Validating DOI: ${doi}`;
+
+    let raData = null;
+    try {
+      const raResp = await Promise.race([
+        fetch(`https://doi.org/doiRA/${doi}`),
+        new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 6000))
+      ]);
+      if (raResp.ok) raData = await raResp.json();
+    } catch (e) {
+      console.warn('[DOI Pre-check] RA fetch failed:', e.message);
+    }
+
+    const ra = raData?.[0]?.RA || null;
+    const raError = raData?.[0]?.status === 'DOI does not exist' || raData?.[0]?.status === 'Invalid DOI';
+
+    if (raError || (!ra && raData)) {
+      // DOI definitively not found — abort immediately, no card rendered
+      throw new Error(`DOI not found — please check and try again: ${doi}`);
+    }
+
+    if (!ra) {
+      // doi.org unreachable (timeout/network) — warn but continue, RA fetch in performLookup will retry
+      console.warn('[DOI Pre-check] Could not reach doi.org, continuing with lookup...');
+    }
+
+    // ── DOI confirmed — update status and proceed ──
+    if (statusEl) statusEl.innerHTML = `<span class="spinner"></span>DOI found (${ra || 'unknown RA'}), fetching data: ${doi}`;
+    console.log(`[DOI Lookup] Pre-check passed: RA = ${ra}`);
     
     // Step 1: Get DOI RA data (CrossRef, DataCite, JaLC, mEDRA, etc.)
-    const doiResult = await window.DOILookup.performLookup(doi);
+    // Pass pre-fetched raData so performLookup can skip the duplicate RA fetch
+    const doiResult = await window.DOILookup.performLookup(doi, raData);
     
     if (doiResult.error) {
       throw new Error(`Failed to fetch DOI information: ${doiResult.message}`);
@@ -194,6 +228,7 @@ async function handleDOILookup(doiInput) {
     };
     
     console.log('[DOI Lookup] All data fetched, checking external services...');
+    if (statusEl) statusEl.innerHTML = `<span class="spinner"></span>Enriching metadata: ${doi}`;
     
     // Step 4: Check all external services BEFORE showing modal
     let linksData = null;
@@ -216,9 +251,6 @@ async function handleDOILookup(doiInput) {
       pubmed:    allData.pubmedAuthorLastORCID      || null,
       openalex:  allData._oaLastAuthorOrcid         || null,
     });
-
-    // Brief pause to let all async data fully settle before caching
-    await new Promise(resolve => setTimeout(resolve, 500));
 
     // Cache in session before displaying
     _sessionCacheSet(doi, allData, linksData);
@@ -304,9 +336,9 @@ function showDOIModal(result, linksHtml) {
   // SUMMARY HEADER BLOCK (no title)
   // ========================================
   const summaryTitle  = result.doiOrgTitle   || result.raTitle   || null;
-  const summaryDate   = result.doiOrgPublishedDate || result.raPublishedDate || result.doiOrgEarliestTimestamp || null;
+  const summaryDate   = result.doiOrgPublishedDate || result.raPublishedDate || result.doiOrgEarliestTimestamp || result.pubmedPublishDate || result.pubmedYear || null;
   const summaryPublisher = result.doiOrgPublisher || result.raPublisher || null;
-  const summaryJournal   = result.doiOrgJournal   || result.raJournal   || null;
+  const summaryJournal   = result.doiOrgJournal   || result.raJournal   || result.pubmedJournalFull || result.pubmedJournal || null;
   const summaryDoi    = result.doiOrgDoi || null;
   const summaryRa     = result.doiOrgRa  || null;
   const summaryRaDataUrl = summaryRa === 'Crossref'  ? `https://api.crossref.org/works/${summaryDoi}`  :
@@ -314,7 +346,7 @@ function showDOIModal(result, linksHtml) {
                            summaryRa === 'JaLC'      ? `https://api.japanlinkcenter.org/dois/${summaryDoi}` :
                            summaryRa === 'mEDRA'     ? `https://api.medra.org/metadata/${summaryDoi}`  : null;
 
-  // Parse all ISSNs for summary
+  // Parse all ISSNs for summary — include PubMed ISSNs as fallback
   const summaryIssnRaw = result.doiOrgIssn || result.raIssn;
   let summaryIssns = [];
   if (summaryIssnRaw) {
@@ -322,6 +354,13 @@ function showDOIModal(result, linksHtml) {
       const arr = typeof summaryIssnRaw === 'string' && summaryIssnRaw.startsWith('[') ? JSON.parse(summaryIssnRaw) : [summaryIssnRaw];
       summaryIssns = arr.map(i => i.trim()).filter(Boolean);
     } catch (e) { summaryIssns = []; }
+  }
+  // Fallback: append PubMed ISSNs if RA data didn't provide any
+  if (result.pubmedISSN && !summaryIssns.includes(result.pubmedISSN)) {
+    summaryIssns.push(result.pubmedISSN);
+  }
+  if (result.pubmedESSN && !summaryIssns.includes(result.pubmedESSN)) {
+    summaryIssns.push(result.pubmedESSN);
   }
 
   // Quality from SJR (will be computed after SJR lookup below, placeholder for now)
@@ -593,9 +632,11 @@ function showDOIModal(result, linksHtml) {
     }
   }
 
-  // Publish date
-  if (summaryDate) {
-    const displayDate = summaryDate.length > 10 ? summaryDate.substring(0, 10) : summaryDate;
+  // Publish date — always show
+  {
+    const displayDate = summaryDate
+      ? (summaryDate.length > 10 ? summaryDate.substring(0, 10) : summaryDate)
+      : 'N/A';
     html += `<div style="color: #555; font-size: 17px; font-weight: bold; margin-bottom: 6px;">Publish Date: ${displayDate}</div>`;
   }
 
@@ -798,38 +839,43 @@ function showDOIModal(result, linksHtml) {
   html += '</div>';
 
   // Publisher + Country (from ISSN portal)
-  if (summaryPublisher) {
-    const countryStr = result._issnCountry ? ` &nbsp;|&nbsp; ${escapeHtml(result._issnCountry)}` : '';
-    html += `<div style="color: #555; font-size: 17px; font-weight: bold; margin-bottom: 6px;">Publisher: ${escapeHtml(summaryPublisher)}${countryStr}</div>`;
-  } else if (result._issnCountry) {
-    html += `<div style="color: #555; font-size: 17px; font-weight: bold; margin-bottom: 6px;">Publisher Country: ${escapeHtml(result._issnCountry)}</div>`;
+  // Publisher + Country — always show
+  {
+    const pubLabel = summaryPublisher ? escapeHtml(summaryPublisher) : 'N/A';
+    const countryLabel = result._issnCountry ? escapeHtml(result._issnCountry) : 'N/A';
+    html += `<div style="color: #555; font-size: 17px; font-weight: bold; margin-bottom: 6px;">Publisher: ${pubLabel} &nbsp;|&nbsp; Country: ${countryLabel}</div>`;
   }
 
-  // Journal
-  if (summaryJournal) {
-    html += `<div style="color: #555; font-size: 17px; font-weight: bold; margin-bottom: 6px;">Journal: <span style="color: #1a1a18;">${escapeHtml(summaryJournal)}</span></div>`;
+  // Journal — always show
+  {
+    const journalLabel = summaryJournal ? escapeHtml(summaryJournal) : 'N/A';
+    html += `<div style="color: #555; font-size: 17px; font-weight: bold; margin-bottom: 6px;">Journal: <span style="color: #1a1a18;">${journalLabel}</span></div>`;
   }
 
-  // ISSNs with links — label as print/electronic when type data is available
-  if (summaryIssns.length > 0) {
-    // Build type lookup: ISSN -> "print" or "electronic"
-    const issnTypeMap = {};
-    // Source 1: CrossRef issn-type array
-    if (result.raIssnType) {
-      try {
-        const typed = JSON.parse(result.raIssnType);
-        typed.forEach(t => { if (t.value && t.type) issnTypeMap[t.value.trim()] = t.type; });
-      } catch (e) { /* skip */ }
+  // ISSNs with links — always show, label as print/electronic when type data is available
+  {
+    if (summaryIssns.length > 0) {
+      // Build type lookup: ISSN -> "print" or "electronic"
+      const issnTypeMap = {};
+      // Source 1: CrossRef issn-type array
+      if (result.raIssnType) {
+        try {
+          const typed = JSON.parse(result.raIssnType);
+          typed.forEach(t => { if (t.value && t.type) issnTypeMap[t.value.trim()] = t.type; });
+        } catch (e) { /* skip */ }
+      }
+      // Source 2: PubMed separate fields (fallback)
+      if (result.pubmedISSN && !issnTypeMap[result.pubmedISSN]) issnTypeMap[result.pubmedISSN] = 'print';
+      if (result.pubmedESSN && !issnTypeMap[result.pubmedESSN]) issnTypeMap[result.pubmedESSN] = 'electronic';
+
+      const issnLinks = summaryIssns.map(i => {
+        const typeLabel = issnTypeMap[i] ? ` (${issnTypeMap[i]})` : '';
+        return `<a href="https://portal.issn.org/resource/ISSN/${i}" target="_blank" style="color: #005a8c;">${i}</a>${typeLabel}`;
+      }).join(', ');
+      html += `<div style="color: #555; font-size: 17px; font-weight: bold;">ISSN: ${issnLinks}</div>`;
+    } else {
+      html += `<div style="color: #555; font-size: 17px; font-weight: bold;">ISSN: N/A</div>`;
     }
-    // Source 2: PubMed separate fields (fallback)
-    if (result.pubmedISSN && !issnTypeMap[result.pubmedISSN]) issnTypeMap[result.pubmedISSN] = 'print';
-    if (result.pubmedESSN && !issnTypeMap[result.pubmedESSN]) issnTypeMap[result.pubmedESSN] = 'electronic';
-
-    const issnLinks = summaryIssns.map(i => {
-      const typeLabel = issnTypeMap[i] ? ` (${issnTypeMap[i]})` : '';
-      return `<a href="https://portal.issn.org/resource/ISSN/${i}" target="_blank" style="color: #005a8c;">${i}</a>${typeLabel}`;
-    }).join(', ');
-    html += `<div style="color: #555; font-size: 17px; font-weight: bold;">ISSN: ${issnLinks}</div>`;
   }
 
   // ---- ORCID source comparison (testing) ----
@@ -1199,10 +1245,13 @@ async function checkAllDOILinks(doi, result) {
   const fallback = { web: null, data: null };
   
   // Wrap each check so it can never reject or hang longer than 4 seconds
-  const safeCheck = (fn) => Promise.race([
-    fn().catch(() => fallback),
-    new Promise(resolve => setTimeout(() => resolve(fallback), 4000))
-  ]);
+  const safeCheck = (fn, customFallback) => {
+    const fb = customFallback !== undefined ? customFallback : fallback;
+    return Promise.race([
+      fn().catch(() => fb),
+      new Promise(resolve => setTimeout(() => resolve(fb), 4000))
+    ]);
+  };
   
   // Pre-compute allIssns here so it's available for checkDOAJJournal in Promise.all below
   const issnDataEarly = result.doiOrgIssn || result.raIssn;
@@ -1212,6 +1261,13 @@ async function checkAllDOILinks(doi, result) {
       const arr = typeof issnDataEarly === 'string' && issnDataEarly.startsWith('[') ? JSON.parse(issnDataEarly) : [issnDataEarly];
       allIssnsPre = arr.map(i => i.trim()).filter(Boolean);
     } catch (e) { allIssnsPre = []; }
+  }
+  // Fallback: append PubMed ISSNs if RA data didn't provide any (or to broaden matching)
+  if (result.pubmedISSN && !allIssnsPre.includes(result.pubmedISSN)) {
+    allIssnsPre.push(result.pubmedISSN);
+  }
+  if (result.pubmedESSN && !allIssnsPre.includes(result.pubmedESSN)) {
+    allIssnsPre.push(result.pubmedESSN);
   }
   const firstIssnPre = allIssnsPre[0] || null;
 
@@ -1239,12 +1295,18 @@ async function checkAllDOILinks(doi, result) {
   }
 
   // Run all checks in parallel - each individually capped at 4 seconds
+  // NOTE: iCite data is already fetched during PubMed lookup (getICiteForSinglePMID).
+  // We only call checkICite here for the web URL (store-search), but reuse existing
+  // _iciteCitations and _iciteRcr from PubMed data if already present.
   const [
     crossref, datacite, openalex, semanticscholar,
     unpaywall, doaj, core, openaire, doajJournal, icite,
     oaCountry, sjrResult
   ] = await Promise.all([
-    safeCheck(() => checkCrossRef(doi)),
+    // Skip CrossRef re-fetch if RA is already CrossRef (data already fetched in DOILookup)
+    result.doiOrgRa === 'Crossref'
+      ? Promise.resolve({ web: null, data: `https://api.crossref.org/works/${doi}` })
+      : safeCheck(() => checkCrossRef(doi)),
     safeCheck(() => checkDataCite(doi)),
     safeCheck(() => checkOpenAlex(doi, result)),
     safeCheck(() => checkSemanticScholar(doi, result)),
@@ -1253,8 +1315,41 @@ async function checkAllDOILinks(doi, result) {
     safeCheck(() => checkCORE(doi)),
     safeCheck(() => checkOpenAIRE(doi, result)),
     safeCheck(() => checkDOAJJournal(allIssnsPre, result)),
-    safeCheck(() => checkICite(result.pubmedPMID, result)),
-    // OpenAlex country lookup - moved into parallel to avoid sequential bottleneck
+    // iCite: only fetch web URL via store-search if PMID exists; skip data re-fetch
+    safeCheck(async () => {
+      if (!result.pubmedPMID) return fallback;
+      const pmid = result.pubmedPMID;
+      const dataUrl = `https://icite.od.nih.gov/api/pubs?pmids=${pmid}`;
+      let webUrl = `https://icite.od.nih.gov/analysis?pmids=${pmid}`;
+      // Only do store-search for the web URL — skip re-fetching data (already have it from PubMed step)
+      try {
+        const searchResp = await fetch('https://icite.od.nih.gov/iciterest/store-search', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            userType: 'app',
+            searchType: 'List of PMIDs input',
+            searchRequest: {
+              pubmedQueryStr: '',
+              uploadedFileName: '',
+              pmids: [pmid],
+              activeTab: 'infl',
+              papersSearch: '',
+              filters: []
+            }
+          })
+        });
+        if (searchResp.ok) {
+          const searchData = await searchResp.json();
+          if (searchData.id) {
+            webUrl = `https://icite.od.nih.gov/results?searchId=${searchData.id}`;
+          }
+        }
+      } catch (e) { /* non-fatal */ }
+      result._iciteUrl = webUrl;
+      return { web: webUrl, data: dataUrl };
+    }),
+    // OpenAlex country lookup
     safeCheck(async () => {
       if (!firstIssnPre) return null;
       const resp = await fetch(`https://api.openalex.org/sources?filter=issn:${firstIssnPre}`);
@@ -1262,7 +1357,7 @@ async function checkAllDOILinks(doi, result) {
       const json = await resp.json();
       return json.results?.[0]?.country_code || null;
     }),
-    // SJR CSV lookup - moved into parallel to avoid sequential bottleneck
+    // SJR CSV lookup
     safeCheck(() => lookupSJR(allIssnsPre)),
   ]);
   
@@ -1399,8 +1494,8 @@ async function checkAllDOILinks(doi, result) {
   };
 
   const [firstAuthorMetrics, lastAuthorMetrics] = await Promise.all([
-    fetchOpenAlexAuthorMetrics(firstOrcid),
-    fetchOpenAlexAuthorMetrics(lastOrcid)
+    safeCheck(() => fetchOpenAlexAuthorMetrics(firstOrcid), null),
+    safeCheck(() => fetchOpenAlexAuthorMetrics(lastOrcid), null)
   ]);
 
   // Attach metrics to result so showDOIModal can use them
@@ -1410,7 +1505,7 @@ async function checkAllDOILinks(doi, result) {
   };
 
   // Fetch PubMed affiliations as fallback when RA affiliation is empty and article is in PubMed
-  // Only fetch if needed - check if RA affiliation is missing for either author
+  // REUSE data already fetched in PubMed lookup (pubmedAuthorsAll) — no duplicate eFetch call needed
   const raFirstAff = result.raFirstAuthorAffiliation || result.doiOrgFirstAuthorAffiliation || null;
   const raLastAff  = result.raLastAuthorAffiliation  || result.doiOrgLastAuthorAffiliation  || null;
   const parseAffCheck = (raw) => {
@@ -1424,61 +1519,15 @@ async function checkAllDOILinks(doi, result) {
   const firstAffEmpty = !parseAffCheck(raFirstAff);
   const lastAffEmpty  = !parseAffCheck(raLastAff);
 
-  // Test: https://eutils.ncbi.nlm.nih.gov/entrez/eutils/efetch.fcgi?db=pubmed&id=40670798&retmode=xml
-  if (result.pubmedFound && result.pubmedPMID && (firstAffEmpty || lastAffEmpty)) {
-    try {
-      const eutilesUrl = `https://eutils.ncbi.nlm.nih.gov/entrez/eutils/efetch.fcgi?db=pubmed&id=${result.pubmedPMID}&retmode=xml`;
-      const xmlResponse = await fetch(eutilesUrl);
-      if (xmlResponse.ok) {
-        const xmlText = await xmlResponse.text();
-        const parser = new DOMParser();
-        const xmlDoc = parser.parseFromString(xmlText, 'text/xml');
-
-        // Extract authors with affiliations from PubMed XML
-        const authorEls = xmlDoc.querySelectorAll('Author');
-        const pubmedAuthors = [];
-        authorEls.forEach(authorEl => {
-          const lastName  = authorEl.querySelector('LastName')?.textContent  || '';
-          const foreName  = authorEl.querySelector('ForeName')?.textContent  || '';
-          const initials  = authorEl.querySelector('Initials')?.textContent  || '';
-
-          // Extract ORCID - may be full URL format
-          let orcidRaw = '';
-          authorEl.querySelectorAll('Identifier').forEach(id => {
-            if (id.getAttribute('Source') === 'ORCID') orcidRaw = id.textContent.trim();
-          });
-          // Strip to bare ID if full URL
-          const orcidClean = orcidRaw.replace('https://orcid.org/', '').trim();
-
-          // Extract affiliations
-          const affs = [];
-          authorEl.querySelectorAll('AffiliationInfo Affiliation').forEach(affEl => {
-            const t = affEl.textContent.trim();
-            if (t) affs.push(t);
-          });
-
-          if (lastName) {
-            pubmedAuthors.push({
-              fullName: `${foreName || initials} ${lastName}`.trim(),
-              orcid: orcidClean,
-              affiliations: affs
-            });
-          }
-        });
-
-        if (pubmedAuthors.length > 0) {
-          const pmFirst = pubmedAuthors[0];
-          const pmLast  = pubmedAuthors[pubmedAuthors.length - 1];
-          result._pubmedAffiliations = {
-            first: firstAffEmpty ? pmFirst.affiliations.join(' ') || null : null,
-            last:  lastAffEmpty  ? pmLast.affiliations.join(' ')  || null : null,
-            usedFallback: true
-          };
-        }
-      }
-    } catch (e) {
-      console.warn('[DOI Lookup] PubMed affiliation fallback failed:', e);
-    }
+  // Reuse pubmedAuthorsAll from the PubMed eFetch step — already contains affiliations
+  if (result.pubmedFound && (firstAffEmpty || lastAffEmpty) && result.pubmedAuthorsAll && result.pubmedAuthorsAll.length > 0) {
+    const pmFirst = result.pubmedAuthorsAll[0];
+    const pmLast  = result.pubmedAuthorsAll[result.pubmedAuthorsAll.length - 1];
+    result._pubmedAffiliations = {
+      first: firstAffEmpty && pmFirst.affiliations?.length > 0 ? pmFirst.affiliations.join(' ') : null,
+      last:  lastAffEmpty  && pmLast.affiliations?.length  > 0 ? pmLast.affiliations.join(' ')  : null,
+      usedFallback: true
+    };
   }
   
   const bestOrcid = (firstOrcid && firstOrcid !== 'N/A') ? firstOrcid : ((lastOrcid && lastOrcid !== 'N/A') ? lastOrcid : null);
