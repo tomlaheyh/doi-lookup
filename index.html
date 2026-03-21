@@ -320,8 +320,30 @@
       if (doiParam) {
         input.value = decodeURIComponent(doiParam);
         runLookup();
+      } else {
+        showExamplePlaceholder();
       }
     });
+
+    function showExamplePlaceholder() {
+      const el = document.createElement('div');
+      el.id = 'example-placeholder';
+      el.style.cssText = 'max-width:1400px; margin:0 auto; position:relative; display:flex; justify-content:center;';
+      el.innerHTML = `
+        <div style="position:relative; display:inline-block;">
+          <div style="position:absolute; top:16px; left:50%; transform:translateX(-50%); z-index:10; background:var(--accent); color:#fff; font-family:var(--mono); font-size:13px; font-weight:600; padding:6px 20px; letter-spacing:0.5px; border-radius:2px; box-shadow:0 2px 8px rgba(0,0,0,0.15);">
+            EXAMPLE — enter a DOI above to look up a real article
+          </div>
+          <img src="./preview.png" alt="Example DOI lookup result" style="max-width:950px; width:100%; border:1.5px solid var(--border); opacity:0.5; pointer-events:none; user-select:none; display:block;">
+        </div>
+      `;
+      results.appendChild(el);
+    }
+
+    function removeExamplePlaceholder() {
+      const el = document.getElementById('example-placeholder');
+      if (el) el.remove();
+    }
 
     // Input pattern helpers
     const ORCID_RE  = /^\d{4}-\d{4}-\d{4}-\d{3}[\dX]$/i;
@@ -376,6 +398,7 @@
     }
 
     async function runLookup() {
+      removeExamplePlaceholder();
       const raw = input.value.trim();
       if (!raw) {
         setStatus('Please enter a DOI, ISSN, ISBN, ORCID, PMID, or search text.', true);
