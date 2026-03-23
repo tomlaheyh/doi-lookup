@@ -12,7 +12,7 @@ const DOIHelp = {
     {
       section: 'Getting Started',
       label: 'What is this tool?',
-      description: 'Awesome DOI-Ref-Lookup retrieves metadata, metrics, author information, and external links for DOIs, ISBNs, and more. It queries over a dozen data sources in real time and presents a consolidated summary. Unrecognized input is sent to WorldCat as a general search. All feedback is appreciated — <a href="mailto:tomlaheyh@gmail.com" style="color:#005a8c;">tomlaheyh@gmail.com</a>.',
+      description: 'Awesome DOI-Ref-Lookup retrieves metadata, metrics, author information, and external links for DOIs, ISBNs, and more. It queries over a dozen data sources in real time and presents a consolidated summary. Unrecognized input is sent to CrossRef as a general search; prefix with <code style="font-size:12px;background:#f0f0f0;padding:1px 5px;">worldcat</code> or <code style="font-size:12px;background:#f0f0f0;padding:1px 5px;">book</code> to search WorldCat instead. All feedback is appreciated — <a href="mailto:tomlaheyh@gmail.com" style="color:#005a8c;">tomlaheyh@gmail.com</a>.',
       ref: 'https://www.doi.org/'
     },
     {
@@ -31,8 +31,13 @@ const DOIHelp = {
       ref: 'https://search.worldcat.org/'
     },
     {
-      label: 'Text search → WorldCat',
-      description: 'Any input that doesn\'t match a DOI, ISSN, ISBN, ORCID, or PMID pattern is sent as a search to WorldCat. By default this searches all fields — for example <code style="font-size:12px;background:#f0f0f0;padding:1px 5px;">Brief History of Time</code>. You can narrow the search with prefixes: <code style="font-size:12px;background:#f0f0f0;padding:1px 5px;">author: Jane Goodall</code> or <code style="font-size:12px;background:#f0f0f0;padding:1px 5px;">au: Goodall</code> for author search, and <code style="font-size:12px;background:#f0f0f0;padding:1px 5px;">title: Brief History</code> or <code style="font-size:12px;background:#f0f0f0;padding:1px 5px;">ti: Brief History</code> for title search.',
+      label: 'Text search → CrossRef',
+      description: 'Any input that doesn\'t match a DOI, ISSN, ISBN, ORCID, or PMID pattern is sent as a search to CrossRef. Results are shown inline — click any result to run a full DOI lookup. For example, <code style="font-size:12px;background:#f0f0f0;padding:1px 5px;">Detecting structural heart disease</code> will search CrossRef and display matching articles.',
+      ref: 'https://www.crossref.org/'
+    },
+    {
+      label: 'WorldCat search (book / worldcat prefix)',
+      description: 'Prefix your search with <code style="font-size:12px;background:#f0f0f0;padding:1px 5px;">worldcat</code> or <code style="font-size:12px;background:#f0f0f0;padding:1px 5px;">book</code> to search WorldCat instead of CrossRef. The prefix can be followed by a colon, semicolon, slash, or just a space — for example <code style="font-size:12px;background:#f0f0f0;padding:1px 5px;">worldcat Brief History of Time</code>, <code style="font-size:12px;background:#f0f0f0;padding:1px 5px;">worldcat: Brief History of Time</code>, or <code style="font-size:12px;background:#f0f0f0;padding:1px 5px;">book; Brief History of Time</code> all work. WorldCat opens in a new tab. Note: rapid repeated searches may trigger WorldCat\'s rate limiting — if this happens, wait a moment and try again.',
       ref: 'https://search.worldcat.org/'
     },
     {
