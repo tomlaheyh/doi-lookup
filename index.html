@@ -262,7 +262,7 @@
 
   <header>
     <h1>Awesome DOI-Ref-Lookup</h1>
-    <p>Enter a DOI (up to 15, separated by commas), a single ISSN, ISBN, ORCID, or PMID to retrieve article metadata, metrics, <span style="color:var(--accent2);font-weight:500;">retraction status</span>, and more. Any other text searches CrossRef. Prefix with <span style="font-family:var(--mono);font-size:12px;">book:</span> to search WorldCat instead.</p>
+    <p>Enter a DOI (up to 15, separated by commas), a single ISSN, ISBN, ORCID, or PMID to retrieve article metadata, metrics, <span style="color:var(--accent2);font-weight:500;">retraction status</span>, and more. Any other text searches CrossRef. Prefix with <span style="font-family:var(--mono);font-size:12px;">worldcat</span> or <span style="font-family:var(--mono);font-size:12px;">book</span> to search WorldCat instead.</p>
     <p style="margin-top:5px; font-size:11.5px;">2025: CrossRef registered 13.2M, where 8.75M are academic (articles, preprints, reports) &middot; DataCite 1M academic &middot; together ~95% of 2025 academic DOIs globally.</p>
   </header>
 
@@ -328,7 +328,7 @@
     function showExamplePlaceholder() {
       const el = document.createElement('div');
       el.id = 'example-placeholder';
-      el.style.cssText = 'max-width:1400px; margin:0 auto; position:relative; display:flex; justify-content:center;';
+      el.style.cssText = 'max-width:1400px; margin:60px auto 0; position:relative; display:flex; justify-content:center;';
       el.innerHTML = `
         <div style="position:relative; display:inline-block;">
           <div style="position:absolute; top:16px; left:50%; transform:translateX(-50%); z-index:10; background:var(--accent); color:#fff; font-family:var(--mono); font-size:13px; font-weight:600; padding:6px 20px; letter-spacing:0.5px; border-radius:2px; box-shadow:0 2px 8px rgba(0,0,0,0.15);">
@@ -343,6 +343,18 @@
     function removeExamplePlaceholder() {
       const el = document.getElementById('example-placeholder');
       if (el) el.remove();
+    }
+
+    function showToast(msg, duration = 4000) {
+      const toast = document.createElement('div');
+      toast.textContent = msg;
+      toast.style.cssText = 'position:fixed; top:32px; left:50%; transform:translateX(-50%); background:#333; color:#fff; font-family:var(--mono); font-size:13px; padding:10px 24px; border-radius:4px; box-shadow:0 4px 12px rgba(0,0,0,0.2); z-index:99999; opacity:0; transition:opacity 0.3s;';
+      document.body.appendChild(toast);
+      requestAnimationFrame(() => toast.style.opacity = '1');
+      setTimeout(() => {
+        toast.style.opacity = '0';
+        setTimeout(() => toast.remove(), 300);
+      }, duration);
     }
 
     // Input pattern helpers
@@ -433,7 +445,8 @@
       const isbn = extractIsbn(raw);
       if (isbn) {
         setStatus('Opened WorldCat in a new tab.');
-        window.open(`https://search.worldcat.org/isbn/${isbn}`, '_blank');
+        showToast('WorldCat opened — if you see a rate limit error, wait a moment and try again.');
+        setTimeout(() => window.open(`https://search.worldcat.org/isbn/${isbn}`, '_blank'), 1000);
         return;
       }
 
@@ -454,11 +467,12 @@
       for (const entry of entries) {
         const clean = extractCleanDoi(entry);
         if (!clean) {
-          // Not a recognized identifier — check for book: prefix → WorldCat, otherwise → CrossRef search
-          const bookMatch = raw.match(/^book[:\s]+(.+)$/i);
+          // Not a recognized identifier — check for book/worldcat prefix → WorldCat, otherwise → CrossRef search
+          const bookMatch = raw.match(/^(?:book|worldcat)[;:/]?\s+(.+)$/i);
           if (bookMatch) {
             setStatus('Opened WorldCat search in a new tab.');
-            window.open(`https://search.worldcat.org/search?q=${encodeURIComponent(bookMatch[1].trim())}`, '_blank');
+            showToast('WorldCat opened — if you see a rate limit error, wait a moment and try again.');
+            setTimeout(() => window.open(`https://search.worldcat.org/search?q=${encodeURIComponent(bookMatch[1].trim())}`, '_blank'), 1000);
             return;
           }
           // CrossRef text search — show results inline
