@@ -216,6 +216,18 @@
     font-style: italic;
   }
 
+  tbody td:first-child a {
+    color: var(--text);
+    text-decoration: none;
+    border-bottom: 1px dotted var(--text-muted);
+  }
+
+  tbody td:first-child a:hover {
+    color: var(--accent);
+    border-bottom-color: var(--accent);
+    border-bottom-style: solid;
+  }
+
   /* Chart */
   .chart-container {
     background: var(--surface);
@@ -486,7 +498,19 @@ function renderTable(years, counts) {
     if (row.id === 'total') tr.className = 'total-row';
 
     const labelTd = document.createElement('td');
-    labelTd.textContent = row.label;
+    if (row.type === 'count' && row.term) {
+      const currentYear = years[years.length - 1];
+      const term = buildTerm(row.term, currentYear);
+      const pubmedUrl = 'https://pubmed.ncbi.nlm.nih.gov/?term=' + encodeURIComponent(term);
+      const link = document.createElement('a');
+      link.href = pubmedUrl;
+      link.target = '_blank';
+      link.title = 'Click to open YTD results in PubMed';
+      link.textContent = row.label;
+      labelTd.appendChild(link);
+    } else {
+      labelTd.textContent = row.label;
+    }
     tr.appendChild(labelTd);
 
     years.forEach(y => {

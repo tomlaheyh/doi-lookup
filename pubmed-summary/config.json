@@ -61,6 +61,30 @@
       "section": "core"
     },
     {
+      "id": "preprints",
+      "label": "Preprints",
+      "db": "pubmed",
+      "term": "preprint[pt] AND {year} [crdt]",
+      "type": "count",
+      "section": "core"
+    },
+    {
+      "id": "corrections",
+      "label": "Corrections (erratum notices)",
+      "db": "pubmed",
+      "term": "\"Published Erratum\"[pt] AND {year}[crdt]",
+      "type": "count",
+      "section": "core"
+    },
+    {
+      "id": "retractions",
+      "label": "Retractions",
+      "db": "pubmed",
+      "term": "\"Retracted Publication\"[pt] AND {year}[lr]",
+      "type": "count",
+      "section": "core"
+    },
+    {
       "id": "hasabstract",
       "label": "hasabstract (has abstract)",
       "db": "pubmed",
