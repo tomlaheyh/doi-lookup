@@ -713,7 +713,7 @@
 
       const header = document.createElement('div');
       header.style.cssText = 'font-family:var(--mono); font-size:12px; font-weight:600; letter-spacing:1px; text-transform:uppercase; color:var(--accent); padding:10px 16px; background:#f0f4f8; border-bottom:1px solid var(--border); display:flex; justify-content:space-between; align-items:center;';
-      header.innerHTML = `<span>CrossRef Search Results</span><button onclick="this.closest('#crossref-search-results').remove()" style="background:none; border:none; color:var(--muted); cursor:pointer; font-size:16px; font-weight:bold; line-height:1; padding:0;">&times;</button>`;
+      header.innerHTML = `<span>CrossRef Results &middot; Books? Try: book cat in the hat</span><button onclick="this.closest('#crossref-search-results').remove()" style="background:none; border:none; color:var(--muted); cursor:pointer; font-size:16px; font-weight:bold; line-height:1; padding:0;">&times;</button>`;
       container.appendChild(header);
 
       items.forEach((item, i) => {
