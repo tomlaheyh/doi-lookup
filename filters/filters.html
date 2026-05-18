@@ -716,10 +716,16 @@ async function init() {
   if (serverData && serverData.counts && Object.keys(serverData.counts).length > 0) {
     setCache({ counts: serverData.counts });
     render(serverData.counts);
-    setStatus('cached', `Server data from ${new Date(serverData.timestamp).toLocaleDateString()}`);
+    const d = new Date(serverData.timestamp);
+    const stale = shouldRefresh({ timestamp: serverData.timestamp });
+    const ageMsg = stale
+      ? `Server data from ${d.toLocaleDateString()} (may be outdated — click Force Refresh for live data)`
+      : `Server data from ${d.toLocaleDateString()}`;
+    setStatus('cached', ageMsg);
     document.getElementById('refreshBtn').disabled = false;
     document.getElementById('exportBtn').disabled = false;
-    if (shouldRefresh({ timestamp: serverData.timestamp })) await runFetch();
+    // Note: do NOT auto-refresh on stale server data — the live fetch takes
+    // several minutes and blocks the page. Users can click Force Refresh.
     return;
   }
 

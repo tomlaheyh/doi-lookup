@@ -813,14 +813,15 @@ async function init() {
     renderChart(years, serverData.counts);
     renderVenn(years, serverData.counts);
     const d = new Date(serverData.timestamp);
-    setStatus('cached', `Server data from ${d.toLocaleDateString()}`);
+    const stale = shouldRefresh({ timestamp: serverData.timestamp });
+    const ageMsg = stale
+      ? `Server data from ${d.toLocaleDateString()} (may be outdated — click Force Refresh for live data)`
+      : `Server data from ${d.toLocaleDateString()}`;
+    setStatus('cached', ageMsg);
     document.getElementById('refreshBtn').disabled = false;
     document.getElementById('exportBtn').disabled = false;
-
-    // If server data is stale, auto-refresh in background
-    if (shouldRefresh({ timestamp: serverData.timestamp })) {
-      await runFetch(years);
-    }
+    // Note: do NOT auto-refresh on stale server data — the live fetch takes
+    // several minutes and blocks the page. Users can click Force Refresh.
     return;
   }
 

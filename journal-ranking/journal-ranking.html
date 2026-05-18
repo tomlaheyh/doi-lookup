@@ -273,6 +273,9 @@ const DATA_FILE = 'Journal_Ranking_YTD_2026.csv';
 const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
 
 let allRows = [];
+let sortedFiltered = []; // current sorted+filtered view
+let renderedCount = 0;   // how many rows of sortedFiltered are in the DOM
+const PAGE_SIZE = 100;
 let sortCol = 0;
 let sortDir = 'asc'; // rank is ascending by default
 
@@ -376,8 +379,46 @@ function getCellValue(row, colIdx) {
   return row.months[monthIdx] || 0;
 }
 
+function buildRowHTML(r, dateRange) {
+  const rowCls = r.rank <= 10 ? ' class="top10"' : '';
+  const isValidISSN = /^\d{4}-\d{3}[\dXx]$/.test(r.issn);
+  let titleCell;
+  if (isValidISSN) {
+    const term = `${dateRange} [crdt] ${r.issn} [ta]`;
+    const pubmedUrl = 'https://pubmed.ncbi.nlm.nih.gov/?term=' + encodeURIComponent(term);
+    titleCell = `<a href="${pubmedUrl}" target="_blank" title="Open in PubMed">${r.title}</a>`;
+  } else {
+    titleCell = r.title;
+  }
+  let row = `<tr${rowCls}>`;
+  row += `<td>${r.rank}</td>`;
+  row += `<td>${r.issn}</td>`;
+  row += `<td>${titleCell}</td>`;
+  row += `<td class="pct-cell">${(r.medlinePct * 100).toFixed(0)}%</td>`;
+  row += `<td class="pct-cell">${(r.freeFullPct * 100).toFixed(0)}%</td>`;
+  row += `<td class="pct-cell">${(r.orcidPct * 100).toFixed(0)}%</td>`;
+  row += `<td class="total-cell">${r.total.toLocaleString()}</td>`;
+  for (let m = 0; m < 12; m++) {
+    const val = r.months[m];
+    const cls = m === 0 ? ' class="month-first"' : '';
+    row += `<td${cls}>${val > 0 ? val.toLocaleString() : ''}</td>`;
+  }
+  row += '</tr>';
+  return row;
+}
+
+function getDateRange() {
+  const now = new Date();
+  const yr = now.getFullYear();
+  let lm = now.getMonth();
+  if (lm === 0) lm = 1;
+  const ld = new Date(yr, lm, 0).getDate();
+  const mm = String(lm).padStart(2, '0');
+  const dd = String(ld).padStart(2, '0');
+  return `${yr}/01/01:${yr}/${mm}/${dd}`;
+}
+
 function renderRows() {
-  const body = document.getElementById('tableBody');
   const searchTerm = document.getElementById('searchInput').value.toLowerCase();
 
   let filtered = allRows;
@@ -389,7 +430,7 @@ function renderRows() {
   }
 
   // Sort
-  const sorted = filtered.slice().sort((a, b) => {
+  sortedFiltered = filtered.slice().sort((a, b) => {
     const va = getCellValue(a, sortCol);
     const vb = getCellValue(b, sortCol);
     let cmp;
@@ -401,51 +442,49 @@ function renderRows() {
     return sortDir === 'asc' ? cmp : -cmp;
   });
 
-  // Build all HTML as one string
+  // Render only the first PAGE_SIZE rows
+  const body = document.getElementById('tableBody');
+  const dateRange = getDateRange();
+  const initialCount = Math.min(PAGE_SIZE, sortedFiltered.length);
+
   const htmlParts = [];
-  // Build date range for PubMed links
-  const now = new Date();
-  const yr = now.getFullYear();
-  let lm = now.getMonth();
-  if (lm === 0) lm = 1;
-  const ld = new Date(yr, lm, 0).getDate();
-  const mm = String(lm).padStart(2, '0');
-  const dd = String(ld).padStart(2, '0');
-  const dateRange = `${yr}/01/01:${yr}/${mm}/${dd}`;
-
-  for (let i = 0; i < sorted.length; i++) {
-    const r = sorted[i];
-    const rowCls = r.rank <= 10 ? ' class="top10"' : '';
-    const isValidISSN = /^\d{4}-\d{3}[\dXx]$/.test(r.issn);
-    let titleCell;
-    if (isValidISSN) {
-      const term = `${dateRange} [crdt] ${r.issn} [ta]`;
-      const pubmedUrl = 'https://pubmed.ncbi.nlm.nih.gov/?term=' + encodeURIComponent(term);
-      titleCell = `<a href="${pubmedUrl}" target="_blank" title="Open in PubMed">${r.title}</a>`;
-    } else {
-      titleCell = r.title;
-    }
-    let row = `<tr${rowCls}>`;
-    row += `<td>${r.rank}</td>`;
-    row += `<td>${r.issn}</td>`;
-    row += `<td>${titleCell}</td>`;
-    row += `<td class="pct-cell">${(r.medlinePct * 100).toFixed(0)}%</td>`;
-    row += `<td class="pct-cell">${(r.freeFullPct * 100).toFixed(0)}%</td>`;
-    row += `<td class="pct-cell">${(r.orcidPct * 100).toFixed(0)}%</td>`;
-    row += `<td class="total-cell">${r.total.toLocaleString()}</td>`;
-    for (let m = 0; m < 12; m++) {
-      const val = r.months[m];
-      const cls = m === 0 ? ' class="month-first"' : '';
-      row += `<td${cls}>${val > 0 ? val.toLocaleString() : ''}</td>`;
-    }
-    row += '</tr>';
-    htmlParts.push(row);
+  for (let i = 0; i < initialCount; i++) {
+    htmlParts.push(buildRowHTML(sortedFiltered[i], dateRange));
   }
-
   body.innerHTML = htmlParts.join('');
+  renderedCount = initialCount;
 
-  document.getElementById('rowCount').textContent =
-    searchTerm ? `${sorted.length} of ${allRows.length} journals` : `${allRows.length} journals`;
+  // Reset scroll to top so the user sees the new first row after sort/filter
+  const wrap = document.querySelector('.table-wrap');
+  if (wrap) wrap.scrollTop = 0;
+
+  updateRowCount();
+}
+
+function appendNextPage() {
+  if (renderedCount >= sortedFiltered.length) return;
+  const body = document.getElementById('tableBody');
+  const dateRange = getDateRange();
+  const end = Math.min(renderedCount + PAGE_SIZE, sortedFiltered.length);
+  const htmlParts = [];
+  for (let i = renderedCount; i < end; i++) {
+    htmlParts.push(buildRowHTML(sortedFiltered[i], dateRange));
+  }
+  body.insertAdjacentHTML('beforeend', htmlParts.join(''));
+  renderedCount = end;
+  updateRowCount();
+}
+
+function updateRowCount() {
+  const searchTerm = document.getElementById('searchInput').value;
+  const el = document.getElementById('rowCount');
+  const shown = renderedCount;
+  const total = sortedFiltered.length;
+  if (searchTerm) {
+    el.textContent = `Showing ${shown} of ${total} matches (${allRows.length} total)`;
+  } else {
+    el.textContent = `Showing ${shown} of ${allRows.length} journals`;
+  }
 }
 
 function filterTable() {
@@ -505,11 +544,23 @@ async function init() {
 
     buildHeader();
     renderRows();
+    attachScrollListener();
     document.getElementById('exportBtn').disabled = false;
 
   } catch (e) {
     document.getElementById('statusText').textContent = 'Error loading data: ' + e.message;
   }
+}
+
+function attachScrollListener() {
+  const wrap = document.querySelector('.table-wrap');
+  if (!wrap) return;
+  wrap.addEventListener('scroll', () => {
+    // Trigger when within ~400px of the bottom
+    if (wrap.scrollTop + wrap.clientHeight >= wrap.scrollHeight - 400) {
+      appendNextPage();
+    }
+  });
 }
 
 window.addEventListener('DOMContentLoaded', init);
