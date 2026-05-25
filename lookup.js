@@ -112,6 +112,7 @@ function displayError(message) {
   if (resultsDiv) {
     // Append error as a card instead of wiping existing results
     const errDiv = document.createElement('div');
+    errDiv.className = 'lookup-error-card';
     errDiv.style.cssText = 'background:#fff0f0; padding:20px; border:1.5px solid #cc0000; margin-bottom:16px; color:#cc0000; font-family:var(--mono,"IBM Plex Mono",monospace); font-size:13px;';
     errDiv.textContent = `Error: ${message}`;
     resultsDiv.insertAdjacentElement('afterbegin', errDiv);
@@ -145,11 +146,13 @@ function extractDOI(text) {
   // If it's a URL, extract the DOI part
   const urlMatch = text.match(/doi\.org\/(10\.\d{4,}\/\S+)/i);
   if (urlMatch) {
-    return urlMatch[1];
+    return urlMatch[1].replace(/[.,;:)\]}>"'\s]+$/, '');
   }
-  
-  // Otherwise assume it's already a clean DOI
-  return text.trim();
+
+  // Otherwise assume it's already a clean DOI; strip trailing sentence
+  // punctuation (period, comma, etc.) often copied from prose/citations.
+  // Only trailing chars are removed, so periods within a DOI are preserved.
+  return text.trim().replace(/[.,;:)\]}>"'\s]+$/, '');
 }
 
 // ============================================================================
@@ -302,42 +305,8 @@ async function handleDOILookup(doiInput) {
   }
 }
 
-// Show DOI results in a modal
+// Render DOI results inline into the page (#results). Name kept for compatibility.
 function showDOIModal(result, linksHtml) {
-  // Remove existing modal if present
-  const existingModal = document.getElementById('doi-lookup-modal');
-  if (existingModal) {
-    existingModal.remove();
-  }
-  
-  // Create modal
-  const modal = document.createElement('div');
-  modal.id = 'doi-lookup-modal';
-  modal.style.cssText = `
-    position: fixed;
-    z-index: 10000;
-    left: 0;
-    top: 0;
-    width: 100%;
-    height: 100%;
-    background-color: rgba(0, 0, 0, 0.5);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-  `;
-  
-  // Create modal content
-  const content = document.createElement('div');
-  content.style.cssText = `
-    background-color: white;
-    padding: 25px;
-    border-radius: 8px;
-    width: 90%;
-    max-width: 800px;
-    max-height: 80vh;
-    overflow-y: auto;
-    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3);
-  `;
   
   // Helper function to format timestamps in human-readable format
   const formatTimestampHuman = (timestamp) => {
@@ -632,13 +601,25 @@ function showDOIModal(result, linksHtml) {
         ? plain.slice(0, MAX).replace(/\s+\S*$/, '') + '…'
         : plain;
 
-      // Escape for use in onclick attribute
-      const escaped = plain.replace(/\\/g, '\\\\').replace(/'/g, "\\'").replace(/\n/g, '\\n');
-      const moreBtn = needsTruncation
-        ? ` <button onclick="(function(){const d=document.createElement('div');d.style.cssText='position:fixed;z-index:99999;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.5);display:flex;align-items:center;justify-content:center;';const b=document.createElement('div');b.style.cssText='position:relative;background:#fff;padding:28px;max-width:680px;width:90%;max-height:75vh;overflow-y:auto;border:1.5px solid #d8d5cc;font-size:14px;color:#333;line-height:1.7;font-family:IBM Plex Sans,sans-serif;font-weight:300;';const c=document.createElement('button');c.textContent='\u00D7';c.style.cssText='position:absolute;top:8px;right:12px;font-size:20px;font-weight:bold;background:none;border:none;color:#999;cursor:pointer;padding:0;line-height:1;';c.onmouseover=function(){c.style.color='#333';};c.onmouseout=function(){c.style.color='#999';};c.onclick=function(){d.remove();};b.appendChild(c);const t=document.createElement('div');t.style.cssText='margin-top:8px;';t.textContent='${escaped}';b.appendChild(t);d.appendChild(b);d.onclick=function(e){if(e.target===d)d.remove();};document.body.appendChild(d);})()" style="font-family:IBM Plex Mono,monospace;font-size:11px;padding:2px 8px;background:#005a8c;color:#fff;border:none;cursor:pointer;vertical-align:middle;margin-left:4px;">full abstract</button>`
-        : '';
+      // HTML-escape both versions for safe inline rendering (no overlay popup)
+      const esc = s => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+      const truncatedSafe = esc(truncated);
+      const fullSafe = esc(plain);
 
-      html += `<div style="font-size: 14px; color: #555; font-weight: 300; margin-bottom: 10px; line-height: 1.5;">${truncated}${moreBtn}</div>`;
+      if (needsTruncation) {
+        // Unique ids so each card's abstract toggles independently
+        const absId = 'abs-' + Math.random().toString(36).slice(2, 9);
+        const btnStyle = 'font-family:IBM Plex Mono,monospace;font-size:11px;padding:2px 8px;background:#005a8c;color:#fff;border:none;cursor:pointer;vertical-align:middle;margin-left:4px;';
+        // Inline toggle: swap the short/full text in place, no popup, page never dims
+        const toggle = `(function(btn){var s=document.getElementById('${absId}-short');var f=document.getElementById('${absId}-full');var hidden=f.style.display==='none';f.style.display=hidden?'inline':'none';s.style.display=hidden?'none':'inline';btn.textContent=hidden?'show less':'full abstract';})(this)`;
+        html += `<div style="font-size: 14px; color: #555; font-weight: 300; margin-bottom: 10px; line-height: 1.5;">` +
+                `<span id="${absId}-short">${truncatedSafe}</span>` +
+                `<span id="${absId}-full" style="display:none;">${fullSafe}</span>` +
+                ` <button type="button" onclick="${toggle}" style="${btnStyle}">full abstract</button>` +
+                `</div>`;
+      } else {
+        html += `<div style="font-size: 14px; color: #555; font-weight: 300; margin-bottom: 10px; line-height: 1.5;">${truncatedSafe}</div>`;
+      }
     }
   }
 
@@ -1418,12 +1399,8 @@ function showDOIModal(result, linksHtml) {
     resultsDiv.insertAdjacentHTML('afterbegin', cardHtml);
     if (typeof updateCardNumbers === 'function') updateCardNumbers();
   } else {
-    // Fallback: modal for extension context
-    content.innerHTML = html;
-    modal.appendChild(content);
-    document.body.appendChild(modal);
-    document.getElementById('closeDOIModal')?.addEventListener('click', () => modal.remove());
-    modal.addEventListener('click', (e) => { if (e.target === modal) modal.remove(); });
+    // No #results container on the page — nothing to render into.
+    console.warn('[DOI Lookup] No #results container found; cannot display result.');
   }
 }
 

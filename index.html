@@ -3,15 +3,72 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Awesome DOI-Ref-Lookup</title>
-  <!-- Google tag (gtag.js) -->
-  <script async src="https://www.googletagmanager.com/gtag/js?id=G-RDT3VP4L1D"></script>
-  <script>
-    window.dataLayer = window.dataLayer || [];
-    function gtag(){dataLayer.push(arguments);}
-    gtag('js', new Date());
-    gtag('config', 'G-RDT3VP4L1D');
+  <script src="canonical.js"></script>
+
+  <!-- ============================ SEO ============================ -->
+  <title>DOI-Ref-Lookup — Free DOI, PubMed &amp; Citation Metadata Tool</title>
+  <meta name="description" content="Free tool to look up DOIs, ISSNs, ISBNs, ORCIDs and PMIDs. Instantly retrieve article metadata, journal quality metrics, retraction status, and ready-to-copy citations in APA, AMA, Vancouver and MLA.">
+  <meta name="keywords" content="DOI lookup, DOI resolver, citation generator, PubMed lookup, ISSN lookup, ISBN lookup, ORCID lookup, retraction check, journal metrics, reference manager, APA citation, AMA citation, Vancouver citation, MLA citation">
+  <meta name="author" content="DOI-Ref-Lookup">
+  <meta name="robots" content="index, follow">
+  <meta name="theme-color" content="#005a8c">
+
+  <!-- Open Graph (Facebook, LinkedIn, Slack, iMessage previews) -->
+  <meta property="og:type" content="website">
+  <meta property="og:site_name" content="DOI-Ref-Lookup">
+  <meta property="og:title" content="DOI-Ref-Lookup — Free DOI, PubMed &amp; Citation Metadata Tool">
+  <meta property="og:description" content="Look up DOIs, ISSNs, ISBNs, ORCIDs and PMIDs. Get article metadata, journal quality metrics, retraction status, and citations in APA, AMA, Vancouver and MLA.">
+  <meta property="og:url" content="https://doilookup.com/">
+  <meta property="og:image" content="https://doilookup.com/og-image.png">
+  <meta property="og:image:width" content="1200">
+  <meta property="og:image:height" content="630">
+  <meta property="og:image:alt" content="DOI-Ref-Lookup citation and metadata tool">
+
+  <!-- Twitter / X Card -->
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="DOI-Ref-Lookup — Free DOI, PubMed &amp; Citation Metadata Tool">
+  <meta name="twitter:description" content="Look up DOIs, ISSNs, ISBNs, ORCIDs and PMIDs. Get metadata, journal metrics, retraction status, and citations in APA, AMA, Vancouver and MLA.">
+  <meta name="twitter:image" content="https://doilookup.com/og-image.png">
+
+  <!-- Structured data: helps Google understand the site & may enable a search box -->
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@graph": [
+      {
+        "@type": "WebSite",
+        "@id": "https://doilookup.com/#website",
+        "url": "https://doilookup.com/",
+        "name": "DOI-Ref-Lookup",
+        "description": "Free DOI, PubMed and citation metadata lookup tool.",
+        "potentialAction": {
+          "@type": "SearchAction",
+          "target": {
+            "@type": "EntryPoint",
+            "urlTemplate": "https://doilookup.com/?doi={search_term_string}"
+          },
+          "query-input": "required name=search_term_string"
+        }
+      },
+      {
+        "@type": "WebApplication",
+        "name": "DOI-Ref-Lookup",
+        "url": "https://doilookup.com/",
+        "applicationCategory": "ReferenceApplication",
+        "operatingSystem": "Any (web-based)",
+        "browserRequirements": "Requires JavaScript",
+        "description": "Look up DOIs, ISSNs, ISBNs, ORCIDs and PMIDs to retrieve article metadata, journal quality metrics, retraction status, and formatted citations.",
+        "offers": {
+          "@type": "Offer",
+          "price": "0",
+          "priceCurrency": "USD"
+        }
+      }
+    ]
+  }
   </script>
+  <!-- ========================== END SEO ========================== -->
+
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;600&family=IBM+Plex+Sans:wght@300;400;500&display=swap" rel="stylesheet">
   <style>
@@ -368,7 +425,11 @@
 
     function extractCleanDoi(s) {
       // Strip common prefixes like "DOI " or "DOI:" or "doi: "
-      const cleaned = s.replace(/^doi[:\s]+/i, '').trim();
+      let cleaned = s.replace(/^doi[:\s]+/i, '').trim();
+      // Strip trailing sentence punctuation that often gets copied along with a
+      // DOI from prose or citations (e.g. "...cvae185." or "...x123)," ).
+      // Only trailing chars are removed, so periods *within* a DOI are kept.
+      cleaned = cleaned.replace(/[.,;:)\]}>"'\s]+$/, '');
       const urlMatch = cleaned.match(DOI_URL_RE);
       if (urlMatch) return urlMatch[2];
       if (DOI_RE.test(cleaned)) return cleaned;
@@ -444,7 +505,6 @@
       const isbn = extractIsbn(raw);
       if (isbn) {
         setStatus('Opened WorldCat in a new tab.');
-        showToast('WorldCat opened — if you see a rate limit error, wait a moment and try again.');
         setTimeout(() => window.open(`https://search.worldcat.org/isbn/${isbn}`, '_blank'), 1000);
         return;
       }
@@ -470,7 +530,6 @@
           const bookMatch = raw.match(/^(?:book|worldcat)[;:/]?\s+(.+)$/i);
           if (bookMatch) {
             setStatus('Opened WorldCat search in a new tab.');
-            showToast('WorldCat opened — if you see a rate limit error, wait a moment and try again.');
             setTimeout(() => window.open(`https://search.worldcat.org/search?q=${encodeURIComponent(bookMatch[1].trim())}`, '_blank'), 1000);
             return;
           }
@@ -505,6 +564,10 @@
       btn.disabled = true;
       window.__xdoiResult = null;
 
+      // Clear any stale error cards from previous lookups so they don't
+      // linger below new (successful) results.
+      results.querySelectorAll('.lookup-error-card').forEach(el => el.remove());
+
       const total = newDois.length;
       let completed = 0;
 
@@ -515,6 +578,7 @@
         } catch (err) {
           // Show error card for this DOI but continue with the rest
           const errDiv = document.createElement('div');
+          errDiv.className = 'lookup-error-card';
           errDiv.style.cssText = 'background:white; padding:25px; border:1.5px solid #d8d5cc; margin-bottom:16px; color:red;';
           errDiv.textContent = `Error looking up ${doi}: ${err.message}`;
           results.appendChild(errDiv);
@@ -614,6 +678,8 @@
     }
 
     function clearList() {
+      // Always clear any error cards first (they may exist with or without results)
+      results.querySelectorAll('.lookup-error-card').forEach(el => el.remove());
       // Keep only the first card (newest, at top of page)
       if (_allResults.length <= 1) return;
       const keepResult = _allResults[0];

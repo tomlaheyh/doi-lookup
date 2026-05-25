@@ -1,0 +1,6 @@
+# Place this as robots.txt in the ROOT of doilookup.com ONLY.
+# Allows full indexing of the real site.
+User-agent: *
+Allow: /
+
+Sitemap: https://doilookup.com/sitemap.xml

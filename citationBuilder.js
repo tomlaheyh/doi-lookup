@@ -484,13 +484,13 @@ const CitationBuilder = {
     // Pre-fill pages from data
     const currentPages = data.pages || '';
 
-    // Build modal
+    // Build inline panel (no dark overlay — renders in-page)
     const overlay = document.createElement('div');
     overlay.id = 'cite-modal';
-    overlay.style.cssText = 'position:fixed; z-index:10001; left:0; top:0; width:100%; height:100%; background:rgba(0,0,0,0.5); display:flex; align-items:center; justify-content:center;';
+    overlay.style.cssText = 'margin:0 auto 16px; max-width:720px;';
 
     const modal = document.createElement('div');
-    modal.style.cssText = 'background:#fff; width:90%; max-width:720px; max-height:85vh; border:1.5px solid #d8d5cc; display:flex; flex-direction:column; overflow:hidden; box-shadow:0 4px 24px rgba(0,0,0,0.25);';
+    modal.style.cssText = 'background:#fff; width:100%; border:1.5px solid #005a8c; display:flex; flex-direction:column; overflow:hidden; box-shadow:0 2px 10px rgba(0,0,0,0.10);';
 
     // Header
     const header = document.createElement('div');
@@ -538,12 +538,7 @@ const CitationBuilder = {
     modal.appendChild(body);
     overlay.appendChild(modal);
 
-    // Close on overlay click
-    overlay.addEventListener('click', (e) => {
-      if (e.target === overlay) overlay.remove();
-    });
-
-    // Escape key
+    // Escape key closes the panel
     const escHandler = (e) => {
       if (e.key === 'Escape') {
         overlay.remove();
@@ -552,7 +547,14 @@ const CitationBuilder = {
     };
     document.addEventListener('keydown', escHandler);
 
-    document.body.appendChild(overlay);
+    // Insert inline at the top of the results area (no overlay, page never dims)
+    const resultsDiv = document.getElementById('results');
+    if (resultsDiv) {
+      resultsDiv.insertBefore(overlay, resultsDiv.firstChild);
+    } else {
+      document.body.appendChild(overlay);
+    }
+    overlay.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
 
     // Render citations initially
     this._renderCitations(data, currentPages);

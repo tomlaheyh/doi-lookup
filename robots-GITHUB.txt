@@ -1,0 +1,4 @@
+# Place this as robots.txt in the ROOT of the GitHub Pages copy ONLY.
+# It tells crawlers not to index the github.io mirror.
+User-agent: *
+Disallow: /
