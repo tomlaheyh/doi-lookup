@@ -325,7 +325,7 @@
 
   <div class="lookup-box">
     <textarea id="doiInput"
-      placeholder="e.g. 10.1038/s41586-025-09227-0 — DOIs, ISSN, ISBN, ORCID, PMID, or search text"
+      placeholder="Type &quot;example&quot; to see a demo — or enter a DOI, ISSN, ISBN, ORCID, PMID, or search text"
       autocomplete="off" spellcheck="false"></textarea>
     <button id="lookupBtn" onclick="runLookup()">Look Up</button>
   </div>
@@ -388,7 +388,7 @@
       el.innerHTML = `
         <div style="position:relative; display:inline-block;">
           <div style="position:absolute; top:16px; left:50%; transform:translateX(-50%); z-index:10; background:var(--accent); color:#fff; font-family:var(--mono); font-size:13px; font-weight:600; padding:6px 20px; letter-spacing:0.5px; border-radius:2px; box-shadow:0 2px 8px rgba(0,0,0,0.15);">
-            EXAMPLE — enter a DOI above to look up a real article
+            EXAMPLE — type &quot;example&quot; above (or enter any DOI) for a live lookup
           </div>
           <img src="./preview.png" alt="Example DOI lookup result" style="max-width:950px; width:100%; border:1.5px solid var(--border); opacity:0.5; pointer-events:none; user-select:none; display:block;">
         </div>
@@ -469,12 +469,23 @@
       return null;
     }
 
+    // The DOI used when a visitor types "example" / "sample" to see a demo lookup.
+    const EXAMPLE_DOI = '10.1038/s41586-025-09227-0';
+
     async function runLookup() {
       removeExamplePlaceholder();
-      const raw = input.value.trim();
+      let raw = input.value.trim();
       if (!raw) {
         setStatus('Please enter a DOI, ISSN, ISBN, ORCID, PMID, or search text.', true);
         return;
+      }
+
+      // Convenience: typing "example" or "sample" runs a demo DOI lookup so a
+      // first-time visitor can instantly see what a result looks like.
+      if (/^(example|sample|demo|try)$/i.test(raw)) {
+        raw = EXAMPLE_DOI;
+        input.value = EXAMPLE_DOI;
+        setStatus('Showing an example lookup…');
       }
 
       // Check for ORCID (single input only)
