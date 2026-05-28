@@ -51,6 +51,9 @@ async function _loadSJRCache() {
   return _sjrCacheLoading;
 }
 
+// Expose SJR lookup for connectionsGraph.js (node quality coloring)
+window.__getSjrByIssn = function (issn) { return _sjrCache ? _sjrCache.get(issn) : null; };
+
 function _parseSJRCsvLine(line) {
   const res = [];
   let inQuotes = false;
@@ -1397,6 +1400,7 @@ function showDOIModal(result, linksHtml) {
 
     const cardHtml = `<div id="${cardId}" style="background:white; padding:25px; border:1.5px solid #d8d5cc; margin-bottom:16px; transition: opacity 0.2s;">${checkboxHtml}${html}</div>`;
     resultsDiv.insertAdjacentHTML('afterbegin', cardHtml);
+    if (window.ConnectionsGraph) window.ConnectionsGraph.attachButton(result, doi);
     if (typeof updateCardNumbers === 'function') updateCardNumbers();
   } else {
     // No #results container on the page — nothing to render into.

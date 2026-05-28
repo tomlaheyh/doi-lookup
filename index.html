@@ -346,7 +346,7 @@
     // Cache-busting: add &nocache to URL to force fresh script loads
     const _nocache = new URLSearchParams(window.location.search).has('nocache');
     const _bust = _nocache ? '?' + Date.now() : '';
-    ['helpContent.js', 'doiLookup.js', 'pubmedLookup-nonmodule.js', 'citationBuilder.js', 'lookup.js'].forEach(src => {
+    ['helpContent.js', 'doiLookup.js', 'pubmedLookup-nonmodule.js', 'citationBuilder.js', 'lookup.js', 'connectionsGraph.js'].forEach(src => {
       document.write('<script src="' + src + _bust + '"><\/script>');
     });
   </script>
