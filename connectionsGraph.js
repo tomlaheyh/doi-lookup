@@ -28,6 +28,8 @@
     });
   };
 
+  function truncate(s, n) { s = String(s || ''); return s.length > n ? s.slice(0, n - 1).trim() + '\u2026' : s; }
+
   var SCACHE = 'connGraph2:';
 
   function qualityTier(sjr) {
@@ -201,6 +203,9 @@
     var existing = document.getElementById('conn-graph-panel');
     if (existing) existing.remove();
     var hTitle = result.doiOrgTitle || result.raTitle || result.pubmedTitle || 'Article';
+    var hJournal = result.doiOrgJournal || result.raJournal || result.pubmedJournalFull || result.pubmedJournal || '';
+    var hDate = result.doiOrgPublishedDate || result.raPublishedDate || result.doiOrgEarliestTimestamp || result.pubmedPublishDate || result.pubmedYear || '';
+    var hMeta = [hJournal, hDate].filter(Boolean).join(' \u00b7 ');
 
     var panel = document.createElement('div');
     panel.id = 'conn-graph-panel';
@@ -211,7 +216,7 @@
         '<button id="conn-close" style="border:none; background:none; font-size:18px; cursor:pointer; color:#888; line-height:1;">\u2715</button></div>' +
       '<div style="padding:14px 18px; border-bottom:1px solid #f0eee7;">' +
         '<div style="font-weight:600; font-size:14px; line-height:1.35;">' + esc(hTitle) + '</div>' +
-        '<div style="font-size:12px; color:#666; margin-top:3px;">DOI ' + esc(doi) + '</div>' +
+        '<div style="font-size:12px; color:#666; margin-top:3px;">DOI ' + esc(doi) + (hMeta ? '  &#183;  ' + esc(hMeta) : '') + '</div>' +
         '<div id="conn-toggle" style="margin-top:12px; display:inline-flex; border:1px solid #d8d5cc; border-radius:4px; overflow:hidden; font-family:\'IBM Plex Mono\',monospace; font-size:12px;">' +
           '<button data-view="inside" class="conn-tab" style="padding:7px 14px; border:none; background:#fff; cursor:pointer;">Inside (refs)</button>' +
           '<button data-view="outside" class="conn-tab" style="padding:7px 14px; border:none; background:#005a8c; color:#fff; cursor:pointer;">Outside (cited by)</button>' +
@@ -221,6 +226,7 @@
         '<div id="conn-graphpane" style="flex:1 1 560px; min-width:320px; padding:14px;">' +
           '<div id="conn-status" style="font-size:13px; color:#666; padding:20px; text-align:center;">Loading citation data from OpenAlex\u2026</div>' +
           '<div id="conn-graphholder"></div>' +
+          '<div id="conn-tip" style="position:fixed; z-index:10000; display:none; max-width:240px; background:#ffffff; color:#1a1a18; font-family:\'IBM Plex Sans\',sans-serif; font-size:12px; line-height:1.4; padding:8px 11px; border:1px solid #d8d5cc; border-radius:6px; pointer-events:none; box-shadow:0 3px 12px rgba(0,0,0,0.15); -webkit-font-smoothing:antialiased;"></div>' +
           '<div id="conn-legend" style="display:none; font-size:11px; color:#777; margin-top:6px; text-align:center;">Size = citations &#183; color = quality &#183; <span style="color:#185FA5;">\u2192 in</span> = cites this &#183; <span style="color:#9a978d;">\u2192 out</span> = referenced by this</div></div>' +
         '<div id="conn-detail" style="flex:1 1 360px; min-width:300px; padding:18px; border-left:1px solid #f0eee7; min-height:300px;">' +
           '<div style="color:#999; font-size:13px; font-style:italic; padding-top:40px; text-align:center;">Click any bubble to see its details and abstract.</div></div></div>';
@@ -250,12 +256,50 @@
       info.textContent = label;
       holder.innerHTML = renderGraph(nodes);
       document.getElementById('conn-legend').style.display = 'block';
+
+      var tip = document.getElementById('conn-tip');
+      var hoverTimer = null, tipShowing = false, activeIdx = null;
+      function placeTip(e) {
+        if (!tip) return;
+        var pad = 14, w = tip.offsetWidth, h = tip.offsetHeight;
+        var x = e.clientX + pad, y = e.clientY + pad;
+        if (x + w > window.innerWidth - 8) x = e.clientX - w - pad;
+        if (y + h > window.innerHeight - 8) y = e.clientY - h - pad;
+        tip.style.left = Math.round(x) + 'px'; tip.style.top = Math.round(y) + 'px';
+      }
+      function fillTip(node) {
+        var meta = (node.year ? node.year + ' \u00b7 ' : '') + node.cites.toLocaleString() + ' cites';
+        tip.innerHTML = '<div style="font-weight:500; margin-bottom:2px; color:#1a1a18;">' + esc(truncate(node.title, 60)) + '</div>' +
+          '<div style="font-size:11px; color:#888780;">' + esc(meta) + '</div>';
+      }
+
       holder.querySelectorAll('.conn-node').forEach(function (g) {
+        var idx = parseInt(g.getAttribute('data-idx'), 10);
         g.addEventListener('click', function () {
-          var idx = parseInt(g.getAttribute('data-idx'), 10);
           holder.querySelectorAll('.conn-node circle').forEach(function (c) { c.setAttribute('stroke-width', '0.9'); });
           var sel = g.querySelector('circle'); if (sel) sel.setAttribute('stroke-width', '3');
           showDetail(nodes[idx]);
+        });
+        g.addEventListener('mouseover', function (e) {
+          activeIdx = idx;
+          if (tipShowing) {                 // already browsing node-to-node: switch instantly
+            fillTip(nodes[idx]); placeTip(e); return;
+          }
+          clearTimeout(hoverTimer);
+          hoverTimer = setTimeout(function () {
+            if (activeIdx !== idx) return;  // cursor moved on before delay elapsed
+            fillTip(nodes[idx]); tip.style.display = 'block'; tipShowing = true; placeTip(e);
+          }, 300);
+        });
+        g.addEventListener('mousemove', function (e) { if (tipShowing) placeTip(e); });
+        g.addEventListener('mouseout', function () {
+          clearTimeout(hoverTimer);
+          if (activeIdx === idx) activeIdx = null;
+          // Defer hide: if we've moved onto another node, its mouseover already
+          // set activeIdx, so we keep the tooltip; only hide if truly off all nodes.
+          setTimeout(function () {
+            if (activeIdx === null) { tip.style.display = 'none'; tipShowing = false; }
+          }, 10);
         });
       });
       document.querySelectorAll('.conn-tab').forEach(function (t) {
