@@ -30,7 +30,16 @@
 
   function truncate(s, n) { s = String(s || ''); return s.length > n ? s.slice(0, n - 1).trim() + '\u2026' : s; }
 
-  var SCACHE = 'connGraph2:';
+  // Heart icon — outline (empty) or filled. 14px. Inline SVG, no font dep.
+  function heartSvg(filled, size) {
+    size = size || 14;
+    var fill = filled ? '#005a8c' : 'none';
+    var stroke = filled ? '#005a8c' : '#9a978d';
+    return '<svg viewBox="0 0 24 24" width="' + size + '" height="' + size + '" style="vertical-align:-2px;" aria-hidden="true">' +
+      '<path d="M12 21s-7-4.35-9.5-9C1 8.5 3 5 6.5 5c1.74 0 3.41 1 4.5 2.5C12.09 6 13.76 5 15.5 5 19 5 21 8.5 21.5 12c-2.5 4.65-9.5 9-9.5 9z" fill="' + fill + '" stroke="' + stroke + '" stroke-width="1.6" stroke-linejoin="round"/></svg>';
+  }
+
+  var SCACHE = 'connGraph3:';
 
   function qualityTier(sjr) {
     if (sjr === null || isNaN(sjr)) return { label: 'Unknown', fill: '#F1EFE8', stroke: '#888780', text: '#2C2C2A' };
@@ -96,10 +105,27 @@
     try { var c = sessionStorage.getItem(key); if (c) return Promise.resolve(JSON.parse(c)); } catch (e) {}
     return Promise.all([fetchCiters(workId, N_SINGLE), fetchRefs(workId, N_SINGLE)]).then(function (res) {
       var citers = res[0], refs = res[1];
-      var mix = refs.nodes.slice(0, N_MIX_EACH).concat(citers.nodes.slice(0, N_MIX_EACH));
-      var out = { outside: { total: citers.total, nodes: citers.nodes }, inside: { total: refs.total, nodes: refs.nodes }, mix: { nodes: mix } };
-      try { sessionStorage.setItem(key, JSON.stringify(out)); } catch (e) {}
-      return out;
+
+      // Collect unique DOIs from both sides for the retraction batch check
+      var dois = [];
+      var seen = {};
+      function add(arr) { arr.forEach(function (n) { if (n.doi && !seen[n.doi.toLowerCase()]) { seen[n.doi.toLowerCase()] = 1; dois.push(n.doi); } }); }
+      add(citers.nodes); add(refs.nodes);
+
+      var rcPromise = (window.RetractionCheck && window.RetractionCheck.checkBatch)
+        ? window.RetractionCheck.checkBatch(dois)
+        : Promise.resolve({});
+
+      return rcPromise.then(function (rmap) {
+        function mark(n) { n.retracted = !!(n.doi && rmap[n.doi]); return n; }
+        citers.nodes.forEach(mark);
+        refs.nodes.forEach(mark);
+        // Mix built AFTER marking — same node objects, so retraction status carries over
+        var mix = refs.nodes.slice(0, N_MIX_EACH).concat(citers.nodes.slice(0, N_MIX_EACH));
+        var out = { outside: { total: citers.total, nodes: citers.nodes }, inside: { total: refs.total, nodes: refs.nodes }, mix: { nodes: mix } };
+        try { sessionStorage.setItem(key, JSON.stringify(out)); } catch (e) {}
+        return out;
+      });
     });
   }
 
@@ -109,7 +135,19 @@
     return Math.round(min + (Math.sqrt(cites) / Math.sqrt(maxCites)) * (max - min));
   }
 
-  function renderGraph(nodes) {
+  function renderGraph(nodes, centerStatus) {
+    centerStatus = centerStatus || { retracted: false, concern: false };
+    var hubFill, hubStroke, hubText, line1, line2;
+    if (centerStatus.retracted) {
+      hubFill = '#fbe9e9'; hubStroke = '#cc0000'; hubText = '#cc0000';
+      line1 = 'RETRACTED'; line2 = '';
+    } else if (centerStatus.concern) {
+      hubFill = '#fff3d6'; hubStroke = '#b25c00'; hubText = '#a04a00';
+      line1 = 'EXPRESSION'; line2 = 'OF CONCERN';
+    } else {
+      hubFill = '#B5D4F4'; hubStroke = '#185FA5'; hubText = '#0C447C';
+      line1 = 'This'; line2 = 'article';
+    }
     var W = 560, H = 560, cx = W / 2, cy = H / 2, ringR = 215, hubR = 44;
     var maxCites = nodes.reduce(function (m, n) { return Math.max(m, n.cites); }, 0);
     var p = [];
@@ -128,14 +166,20 @@
       var dx = pt.x - cx, dy = pt.y - cy, len = Math.sqrt(dx * dx + dy * dy), ux = dx / len, uy = dy / len;
       var hx = cx + ux * (hubR + 2), hy = cy + uy * (hubR + 2);
       var nx = pt.x - ux * (r + 4), ny = pt.y - uy * (r + 4);
-      if (n.direction === 'out')
-        p.push('<line x1="' + hx.toFixed(1) + '" y1="' + hy.toFixed(1) + '" x2="' + nx.toFixed(1) + '" y2="' + ny.toFixed(1) + '" stroke="#c9c6bc" stroke-width="1" marker-end="url(#arrOut)"/>');
+      if (n.direction === 'in')
+        // reference: center → node (outward gray)
+        p.push('<line class="conn-spoke" data-idx="' + a + '" x1="' + hx.toFixed(1) + '" y1="' + hy.toFixed(1) + '" x2="' + nx.toFixed(1) + '" y2="' + ny.toFixed(1) + '" stroke="#c9c6bc" stroke-width="1" marker-end="url(#arrOut)"/>');
       else
-        p.push('<line x1="' + nx.toFixed(1) + '" y1="' + ny.toFixed(1) + '" x2="' + hx.toFixed(1) + '" y2="' + hy.toFixed(1) + '" stroke="#bcd2ea" stroke-width="1" marker-end="url(#arrIn)"/>');
+        // citer: node → center (inward blue)
+        p.push('<line class="conn-spoke" data-idx="' + a + '" x1="' + nx.toFixed(1) + '" y1="' + ny.toFixed(1) + '" x2="' + hx.toFixed(1) + '" y2="' + hy.toFixed(1) + '" stroke="#bcd2ea" stroke-width="1" marker-end="url(#arrIn)"/>');
     }
-    p.push('<circle cx="' + cx + '" cy="' + cy + '" r="' + hubR + '" fill="#B5D4F4" stroke="#185FA5" stroke-width="1.4"/>');
-    p.push('<text x="' + cx + '" y="' + (cy - 3) + '" text-anchor="middle" font-size="12" font-weight="bold" fill="#0C447C">This</text>');
-    p.push('<text x="' + cx + '" y="' + (cy + 12) + '" text-anchor="middle" font-size="12" font-weight="bold" fill="#0C447C">article</text>');
+    p.push('<circle cx="' + cx + '" cy="' + cy + '" r="' + hubR + '" fill="' + hubFill + '" stroke="' + hubStroke + '" stroke-width="1.4"/>');
+    if (line2) {
+      p.push('<text x="' + cx + '" y="' + (cy - 3) + '" text-anchor="middle" font-size="11" font-weight="bold" fill="' + hubText + '">' + line1 + '</text>');
+      p.push('<text x="' + cx + '" y="' + (cy + 11) + '" text-anchor="middle" font-size="11" font-weight="bold" fill="' + hubText + '">' + line2 + '</text>');
+    } else {
+      p.push('<text x="' + cx + '" y="' + (cy + 4) + '" text-anchor="middle" font-size="12" font-weight="bold" fill="' + hubText + '">' + line1 + '</text>');
+    }
     for (var j = 0; j < nodes.length; j++) {
       var nd = nodes[j], q = pos[j], rr = radiusFor(nd.cites, maxCites), fs = rr >= 14 ? 12 : 10;
       p.push('<g class="conn-node" data-idx="' + j + '" style="cursor:pointer;">');
@@ -175,21 +219,34 @@
     });
   }
 
-  function showDetail(node) {
+  function showDetail(node, favCtx) {
     var el = document.getElementById('conn-detail');
     if (!el) return;
     var dirLabel = node.direction === 'in' ? 'Referenced by this article' : 'Cites this article';
     var links = [];
     if (node.doi) links.push('<a href="https://doi.org/' + esc(node.doi) + '" target="_blank" rel="noopener" style="color:#005a8c;">View article (DOI) \u2192</a>');
     if (node.oaId) links.push('<a href="https://openalex.org/' + esc(node.oaId) + '" target="_blank" rel="noopener" style="color:#005a8c;">OpenAlex \u2192</a>');
+    var retractedBadge = node.retracted
+      ? '<span style="display:inline-block; background:#cc0000; color:#fff; font-size:9px; font-weight:700; letter-spacing:0.5px; padding:2px 7px; border-radius:3px; margin-right:8px; vertical-align:2px;">RETRACTED</span>'
+      : '';
+    var canFavorite = !!(favCtx && node.doi);
+    var isFav = canFavorite && favCtx.isFav(node.doi);
+    var heart = canFavorite
+      ? '<button class="conn-fav-btn" data-doi="' + esc(node.doi) + '" title="' + (isFav ? 'Remove favorite' : 'Mark as favorite') + '" style="border:none; background:none; padding:0; margin-right:8px; cursor:pointer; vertical-align:-1px;">' + heartSvg(isFav, 18) + '</button>'
+      : '';
     el.innerHTML =
       '<div style="font-size:11px; text-transform:uppercase; letter-spacing:0.6px; color:#9a978d; margin-bottom:6px;">' + dirLabel + '</div>' +
-      '<div style="font-size:15px; font-weight:600; line-height:1.35; color:#1a1a18; margin-bottom:8px;">' + esc(node.title) + '</div>' +
-      '<div style="font-size:12px; color:#666; margin-bottom:4px;">' + esc(node.journal || '') + (node.year ? ' &#183; ' + node.year : '') + '</div>' +
+      '<div style="font-size:15px; font-weight:600; line-height:1.35; color:#1a1a18; margin-bottom:8px;">' + retractedBadge + heart + esc(node.title) + '</div>' +
+      '<div style="font-size:12px; color:#666; margin-bottom:4px;">' + esc(node.journal || '') + (node.year ? (node.journal ? ', ' : '') + node.year : '') + '</div>' +
       '<div style="font-size:12px; color:#666; margin-bottom:10px;">' + node.cites.toLocaleString() + ' citations &#183; <span style="color:' + node.tier.text + ';">' + node.tier.label + ' quality</span></div>' +
       (links.length ? '<div style="font-size:12px; margin-bottom:12px; display:flex; gap:14px;">' + links.join('') + '</div>' : '') +
       '<div style="border-top:1px solid #e5e2d9; padding-top:10px;"><div style="font-size:11px; text-transform:uppercase; letter-spacing:0.6px; color:#9a978d; margin-bottom:6px;">Abstract</div>' +
       '<div id="conn-abstract" style="font-size:13px; line-height:1.5; color:#333;">Loading\u2026</div></div>';
+    // Wire the heart button to the favorites context (if applicable)
+    if (canFavorite) {
+      var btn = el.querySelector('.conn-fav-btn');
+      if (btn) btn.addEventListener('click', function () { favCtx.toggle(node); });
+    }
     getAbstract(node).then(function (res) {
       var ab = document.getElementById('conn-abstract');
       if (!ab) return;
@@ -225,11 +282,23 @@
       '<div style="display:flex; flex-wrap:wrap; align-items:flex-start;">' +
         '<div id="conn-graphpane" style="flex:1 1 560px; min-width:320px; padding:14px;">' +
           '<div id="conn-status" style="font-size:13px; color:#666; padding:20px; text-align:center;">Loading citation data from OpenAlex\u2026</div>' +
-          '<div id="conn-graphholder"></div>' +
-          '<div id="conn-tip" style="position:fixed; z-index:10000; display:none; max-width:240px; background:#ffffff; color:#1a1a18; font-family:\'IBM Plex Sans\',sans-serif; font-size:12px; line-height:1.4; padding:8px 11px; border:1px solid #d8d5cc; border-radius:6px; pointer-events:none; box-shadow:0 3px 12px rgba(0,0,0,0.15); -webkit-font-smoothing:antialiased;"></div>' +
+          '<div id="conn-graphpane-inner" style="position:relative;">' +
+            '<div id="conn-graphholder"></div>' +
+            '<div id="conn-tip" style="position:absolute; left:50%; top:50%; transform:translate(-50%,-50%); z-index:5; display:none; width:230px; background:#ffffff; color:#1a1a18; font-family:\'IBM Plex Sans\',sans-serif; font-size:12px; line-height:1.4; padding:9px 12px; border:1px solid #d8d5cc; border-radius:6px; pointer-events:none; box-shadow:0 3px 12px rgba(0,0,0,0.15); -webkit-font-smoothing:antialiased; text-align:left;"></div>' +
+          '</div>' +
           '<div id="conn-legend" style="display:none; font-size:11px; color:#777; margin-top:6px; text-align:center;">Size = citations &#183; color = quality &#183; <span style="color:#185FA5;">\u2192 in</span> = cites this &#183; <span style="color:#9a978d;">\u2192 out</span> = referenced by this</div></div>' +
         '<div id="conn-detail" style="flex:1 1 360px; min-width:300px; padding:18px; border-left:1px solid #f0eee7; min-height:300px;">' +
-          '<div style="color:#999; font-size:13px; font-style:italic; padding-top:40px; text-align:center;">Click any bubble to see its details and abstract.</div></div></div>';
+          '<div style="color:#999; font-size:13px; font-style:italic; padding-top:40px; text-align:center;">Click any bubble to see its details and abstract.</div></div></div>' +
+      '<div id="conn-list-section" style="border-top:1px solid #f0eee7; padding:14px 18px;">' +
+        '<div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:8px;">' +
+          '<div style="font-size:11px; text-transform:uppercase; letter-spacing:0.6px; color:#9a978d;">Articles in this view</div>' +
+          '<label style="display:inline-flex; align-items:center; gap:6px; font-size:12px; color:#555; cursor:pointer; user-select:none;">' +
+            '<input type="checkbox" id="conn-fav-toggle" style="margin:0; cursor:pointer;"> Show favorites only' +
+          '</label>' +
+        '</div>' +
+        '<div style="font-size:11px; color:#9a978d; font-style:italic; margin-bottom:8px;">Favorites are temporary — they\'ll be cleared when this panel closes.</div>' +
+        '<div id="conn-list" style="max-height:360px; overflow-y:auto; border:1px solid #ececec; border-radius:4px;"></div>' +
+      '</div>';
 
     var resultsDiv = document.getElementById('results');
     if (resultsDiv && resultsDiv.firstChild) resultsDiv.insertBefore(panel, resultsDiv.firstChild);
@@ -246,60 +315,253 @@
     if (!workId) { document.getElementById('conn-status').textContent = 'No OpenAlex record for this DOI — cannot build the report.'; return; }
 
     var DATA = null;
+    var retractedRevealed = false;   // toggled by the "X retracted" link
+    var currentSelected = null;       // the node currently shown in the right panel
+    // Favorites — in-memory, panel-scoped. favSet: quick membership lookup.
+    // favRecords: full snapshot per fav for the eventual export.
+    var favSet = {};
+    var favRecords = {};
+    var favoritesOnly = false;
+
+    function isFav(doi) { return doi && !!favSet[doi.toLowerCase()]; }
+    function favRecord(node) {
+      return {
+        doi: node.doi, oaId: node.oaId, title: node.title, journal: node.journal,
+        year: node.year, citations: node.cites, qualityLabel: node.tier.label,
+        direction: node.direction, retracted: !!node.retracted,
+        centerDoi: doi, favoritedAt: new Date().toISOString()
+      };
+    }
+    function toggleFav(node) {
+      if (!node.doi) return;
+      var key = node.doi.toLowerCase();
+      if (favSet[key]) { delete favSet[key]; delete favRecords[key]; }
+      else { favSet[key] = true; favRecords[key] = favRecord(node); }
+      paint(currentView);  // re-render list + right panel with new heart states
+    }
+    var favCtx = { isFav: isFav, toggle: toggleFav };
+    var currentView = 'outside';
+
+    function renderListRow(node, num, isRetracted, isFavorited) {
+      var dir = node.direction === 'in' ? 'Referenced by this article' : 'Cites this article';
+      var dirColor = node.direction === 'in' ? '#7a7a73' : '#185FA5';
+      var titleHref = node.doi ? 'https://doi.org/' + encodeURI(node.doi) : (node.oaId ? 'https://openalex.org/' + node.oaId : '#');
+      var journalYear = node.journal && node.year ? node.journal + ', ' + node.year : (node.journal || (node.year ? String(node.year) : ''));
+      var meta = [journalYear, node.cites.toLocaleString() + ' citations'].filter(Boolean).join(' \u00b7 ');
+      var retractedBadge = isRetracted
+        ? '<span style="display:inline-block; background:#cc0000; color:#fff; font-size:9px; font-weight:700; letter-spacing:0.5px; padding:1px 6px; border-radius:3px; margin-right:8px; vertical-align:1px;">RETRACTED</span>'
+        : '';
+      var numLabel = isRetracted ? 'R' + num : String(num);
+      var canFav = !!node.doi;
+      var heartBtn = canFav
+        ? '<button class="conn-fav-btn" data-doi="' + esc(node.doi) + '" title="' + (isFavorited ? 'Remove favorite' : 'Mark as favorite') + '" style="border:none; background:none; padding:0; margin:0 2px 0 0; cursor:pointer; line-height:1;">' + heartSvg(isFavorited, 15) + '</button>'
+        : '<span style="display:inline-block; width:17px;"></span>';
+      return '<div class="conn-row" data-idx="' + (isRetracted ? 'r' + num : num) + '" data-retracted="' + (isRetracted ? '1' : '0') + '" style="padding:10px 12px; border-bottom:1px solid #f0eee7; cursor:pointer; transition:background 0.12s;">' +
+        '<div style="display:flex; align-items:baseline; gap:8px; line-height:1.35;">' +
+          heartBtn +
+          '<span style="font-family:\'IBM Plex Mono\',monospace; font-size:11px; color:#9a978d; min-width:22px;">' + numLabel + '</span>' +
+          retractedBadge +
+          '<span style="font-size:11px; color:' + dirColor + '; white-space:nowrap; font-weight:500;">' + dir + '</span>' +
+          '<a href="' + esc(titleHref) + '" target="_blank" rel="noopener" class="conn-row-title" style="font-size:13px; color:#005a8c; text-decoration:none; flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">' + esc(node.title) + '</a>' +
+        '</div>' +
+        '<div style="font-size:11px; color:#888780; margin-top:3px; padding-left:30px;">' + esc(meta) + '</div>' +
+      '</div>';
+    }
+
     function paint(view) {
+      currentView = view;
       var info = document.getElementById('conn-viewinfo'), holder = document.getElementById('conn-graphholder');
-      var nodes, label;
-      if (view === 'inside') { nodes = DATA.inside.nodes; label = DATA.inside.total.toLocaleString() + ' references in this article \u2014 showing top ' + nodes.length + ' by citations'; }
-      else if (view === 'mix') { nodes = DATA.mix.nodes; label = 'Top references + top citing articles, combined'; }
-      else { nodes = DATA.outside.nodes; label = DATA.outside.total.toLocaleString() + ' articles cite this \u2014 showing top ' + nodes.length + ' by citations'; }
-      if (!nodes.length) { holder.innerHTML = '<div style="padding:30px; text-align:center; color:#999; font-style:italic;">No data for this view.</div>'; info.textContent = ''; return; }
-      info.textContent = label;
-      holder.innerHTML = renderGraph(nodes);
-      document.getElementById('conn-legend').style.display = 'block';
+      var rawNodes, label;
+      if (view === 'inside') { rawNodes = DATA.inside.nodes; label = DATA.inside.total.toLocaleString() + ' references in this article \u2014 showing top ' + rawNodes.length + ' by citations'; }
+      else if (view === 'mix') { rawNodes = DATA.mix.nodes; label = 'Top references + top citing articles, combined'; }
+      else { rawNodes = DATA.outside.nodes; label = DATA.outside.total.toLocaleString() + ' articles cite this \u2014 showing top ' + rawNodes.length + ' by citations'; }
+
+      // Split raw into visible (non-retracted) and retracted
+      var nodes = [], retractedNodes = [];
+      for (var i = 0; i < rawNodes.length; i++) {
+        if (rawNodes[i].retracted) retractedNodes.push(rawNodes[i]);
+        else nodes.push(rawNodes[i]);
+      }
+      var retractedCount = retractedNodes.length;
+
+      var retractedNoun;
+      if (view === 'inside')      retractedNoun = 'retracted reference' + (retractedCount === 1 ? '' : 's');
+      else if (view === 'mix')    retractedNoun = 'retracted in the graph';
+      else                        retractedNoun = 'retracted citing article' + (retractedCount === 1 ? '' : 's');
+
+      var retractLabelHTML;
+      if (retractedCount > 0) {
+        var linkText = retractedRevealed ? 'hide' : 'show';
+        retractLabelHTML = '<a href="#" id="conn-retract-toggle" style="color:#005a8c; text-decoration:underline; cursor:pointer;">' + retractedCount + ' ' + esc(retractedNoun) + '</a> <span style="color:#9a978d;">(' + linkText + ')</span>';
+      } else {
+        retractLabelHTML = '<span style="color:#9a978d;">0 ' + esc(retractedNoun) + '</span>';
+      }
+
+      var leader = '';
+      if (result._isRetracted)      leader = '<span style="color:#cc0000; font-weight:600;">This article is retracted.</span> ';
+      else if (result._hasEOC)      leader = '<span style="color:#a04a00; font-weight:600;">This article has an Expression of Concern.</span> ';
+
+      info.innerHTML = leader + esc(label) + ' \u00b7 ' + retractLabelHTML;
+
+      var toggleEl = document.getElementById('conn-retract-toggle');
+      if (toggleEl) toggleEl.addEventListener('click', function (e) {
+        e.preventDefault(); retractedRevealed = !retractedRevealed; paint(view);
+      });
+
+      if (!nodes.length) {
+        holder.innerHTML = '<div style="padding:30px; text-align:center; color:#999; font-style:italic;">No data for this view.</div>';
+      } else {
+        holder.innerHTML = renderGraph(nodes, { retracted: !!result._isRetracted, concern: !!result._hasEOC });
+        document.getElementById('conn-legend').style.display = 'block';
+      }
+
+      // Build the list. Numbering is fixed per node (1..N for visible; R1..Rk
+      // for retracted) — favorites-only just filters which rows are displayed,
+      // it doesn't renumber.
+      var listEl = document.getElementById('conn-list');
+      var rows = '';
+      var anyShown = false;
+      for (var j = 0; j < nodes.length; j++) {
+        if (favoritesOnly && !isFav(nodes[j].doi)) continue;
+        rows += renderListRow(nodes[j], j + 1, false, isFav(nodes[j].doi));
+        anyShown = true;
+      }
+      if (retractedRevealed) for (var k = 0; k < retractedNodes.length; k++) {
+        if (favoritesOnly && !isFav(retractedNodes[k].doi)) continue;
+        rows += renderListRow(retractedNodes[k], k + 1, true, isFav(retractedNodes[k].doi));
+        anyShown = true;
+      }
+      if (!anyShown) {
+        listEl.innerHTML = favoritesOnly
+          ? '<div style="padding:20px; text-align:center; color:#999; font-style:italic; font-size:12px;">No favorites yet — click a <span style="color:#005a8c;">\u2665</span> to add one.</div>'
+          : '<div style="padding:20px; text-align:center; color:#999; font-style:italic; font-size:12px;">No items.</div>';
+      } else {
+        listEl.innerHTML = rows;
+      }
+
+      // Unified selection: highlight bubble + spoke + row, show detail, auto-scroll right panel
+      function select(node, listIdAttr, fromList) {
+        currentSelected = node;
+        holder.querySelectorAll('.conn-node circle').forEach(function (c) { c.setAttribute('stroke-width', '0.9'); });
+        holder.querySelectorAll('.conn-spoke').forEach(function (s) { s.setAttribute('stroke-width', '1'); });
+        listEl.querySelectorAll('.conn-row').forEach(function (r) { r.style.background = ''; });
+
+        if (!node.retracted) {
+          var graphIdx = nodes.indexOf(node);
+          var g = holder.querySelector('.conn-node[data-idx="' + graphIdx + '"]');
+          if (g) {
+            var c = g.querySelector('circle'); if (c) c.setAttribute('stroke-width', '3');
+            var sp = holder.querySelector('.conn-spoke[data-idx="' + graphIdx + '"]'); if (sp) sp.setAttribute('stroke-width', '2.4');
+          }
+        }
+        var row = listIdAttr ? listEl.querySelector('.conn-row[data-idx="' + listIdAttr + '"]') : null;
+        if (row) row.style.background = '#eaf3fb';
+
+        showDetail(node, favCtx);
+
+        if (fromList) {
+          var detail = document.getElementById('conn-detail');
+          if (detail) detail.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+        }
+      }
+
+      // Re-show currently selected article in the right panel after a re-paint
+      // (e.g., after toggling a favorite), so the heart there updates too.
+      if (currentSelected) {
+        // Find the selected node in the *current* nodes/retracted arrays by DOI
+        // (the references could be the same object, but matching by DOI is safer)
+        var match = null, listId = null;
+        for (var m = 0; m < nodes.length; m++) {
+          if (nodes[m].doi && currentSelected.doi && nodes[m].doi.toLowerCase() === currentSelected.doi.toLowerCase()) { match = nodes[m]; listId = String(m + 1); break; }
+        }
+        if (!match) for (var rm = 0; rm < retractedNodes.length; rm++) {
+          if (retractedNodes[rm].doi && currentSelected.doi && retractedNodes[rm].doi.toLowerCase() === currentSelected.doi.toLowerCase()) { match = retractedNodes[rm]; listId = 'r' + (rm + 1); break; }
+        }
+        if (match) {
+          showDetail(match, favCtx);
+          var sRow = listEl.querySelector('.conn-row[data-idx="' + listId + '"]');
+          if (sRow) sRow.style.background = '#eaf3fb';
+          // Re-apply graph highlight too
+          if (!match.retracted) {
+            var gIdx = nodes.indexOf(match);
+            var gEl = holder.querySelector('.conn-node[data-idx="' + gIdx + '"]');
+            if (gEl) {
+              var gC = gEl.querySelector('circle'); if (gC) gC.setAttribute('stroke-width', '3');
+              var gSp = holder.querySelector('.conn-spoke[data-idx="' + gIdx + '"]'); if (gSp) gSp.setAttribute('stroke-width', '2.4');
+            }
+          }
+        }
+      }
+
+      // Wire list rows
+      listEl.querySelectorAll('.conn-row').forEach(function (row) {
+        row.addEventListener('click', function (e) {
+          // Heart buttons handle themselves; title link too
+          if (e.target.closest('.conn-fav-btn') || e.target.closest('.conn-row-title')) return;
+          var idAttr = row.getAttribute('data-idx');
+          var isRetracted = row.getAttribute('data-retracted') === '1';
+          var nodeRef;
+          if (isRetracted) {
+            var rIdx = parseInt(idAttr.slice(1), 10) - 1;
+            nodeRef = retractedNodes[rIdx];
+          } else {
+            nodeRef = nodes[parseInt(idAttr, 10) - 1];
+          }
+          if (nodeRef) select(nodeRef, idAttr, true);
+        });
+        // subtle hover background
+        row.addEventListener('mouseenter', function () { if (row.style.background !== 'rgb(234, 243, 251)') row.style.background = '#f7f6f2'; });
+        row.addEventListener('mouseleave', function () { if (row.style.background === 'rgb(247, 246, 242)') row.style.background = ''; });
+      });
+
+      // Wire heart buttons (rows) — find by class, look up node by DOI, toggle.
+      listEl.querySelectorAll('.conn-fav-btn').forEach(function (btn) {
+        btn.addEventListener('click', function (e) {
+          e.stopPropagation();
+          var btnDoi = btn.getAttribute('data-doi');
+          if (!btnDoi) return;
+          var key = btnDoi.toLowerCase();
+          // Locate the node by DOI in either nodes or retractedNodes
+          var n = null;
+          for (var x = 0; x < nodes.length; x++) if (nodes[x].doi && nodes[x].doi.toLowerCase() === key) { n = nodes[x]; break; }
+          if (!n) for (var rx = 0; rx < retractedNodes.length; rx++) if (retractedNodes[rx].doi && retractedNodes[rx].doi.toLowerCase() === key) { n = retractedNodes[rx]; break; }
+          if (n) toggleFav(n);
+        });
+      });
 
       var tip = document.getElementById('conn-tip');
       var hoverTimer = null, tipShowing = false, activeIdx = null;
-      function placeTip(e) {
-        if (!tip) return;
-        var pad = 14, w = tip.offsetWidth, h = tip.offsetHeight;
-        var x = e.clientX + pad, y = e.clientY + pad;
-        if (x + w > window.innerWidth - 8) x = e.clientX - w - pad;
-        if (y + h > window.innerHeight - 8) y = e.clientY - h - pad;
-        tip.style.left = Math.round(x) + 'px'; tip.style.top = Math.round(y) + 'px';
-      }
       function fillTip(node) {
-        var meta = (node.year ? node.year + ' \u00b7 ' : '') + node.cites.toLocaleString() + ' cites';
-        tip.innerHTML = '<div style="font-weight:500; margin-bottom:2px; color:#1a1a18;">' + esc(truncate(node.title, 60)) + '</div>' +
-          '<div style="font-size:11px; color:#888780;">' + esc(meta) + '</div>';
+        var journalYear = node.journal && node.year ? truncate(node.journal, 50) + ', ' + node.year
+          : (node.journal ? truncate(node.journal, 50) : (node.year ? String(node.year) : ''));
+        var jyLine = journalYear ? '<div style="font-size:11px; color:#888780; margin-top:3px;">' + esc(journalYear) + '</div>' : '';
+        var citesLine = '<div style="font-size:11px; color:#888780; margin-top:3px;">' + node.cites.toLocaleString() + ' citations</div>';
+        tip.innerHTML = '<div style="font-weight:500; color:#1a1a18;">' + esc(truncate(node.title, 90)) + '</div>' + jyLine + citesLine;
       }
+      function showTip() { tip.style.display = 'block'; tipShowing = true; }
+      function hideTip() { tip.style.display = 'none'; tipShowing = false; }
 
       holder.querySelectorAll('.conn-node').forEach(function (g) {
         var idx = parseInt(g.getAttribute('data-idx'), 10);
-        g.addEventListener('click', function () {
-          holder.querySelectorAll('.conn-node circle').forEach(function (c) { c.setAttribute('stroke-width', '0.9'); });
-          var sel = g.querySelector('circle'); if (sel) sel.setAttribute('stroke-width', '3');
-          showDetail(nodes[idx]);
-        });
-        g.addEventListener('mouseover', function (e) {
+        var circle = g.querySelector('circle');
+        var baseStroke = circle.getAttribute('stroke');
+        g.addEventListener('click', function () { select(nodes[idx], String(idx + 1), false); });
+        g.addEventListener('mouseover', function () {
           activeIdx = idx;
-          if (tipShowing) {                 // already browsing node-to-node: switch instantly
-            fillTip(nodes[idx]); placeTip(e); return;
-          }
+          // bubble hover state: light ring (distinct from click's thick stroke)
+          if (circle.getAttribute('stroke-width') !== '3') circle.setAttribute('stroke-width', '1.8');
+          if (tipShowing) { fillTip(nodes[idx]); return; }
           clearTimeout(hoverTimer);
           hoverTimer = setTimeout(function () {
-            if (activeIdx !== idx) return;  // cursor moved on before delay elapsed
-            fillTip(nodes[idx]); tip.style.display = 'block'; tipShowing = true; placeTip(e);
+            if (activeIdx !== idx) return;
+            fillTip(nodes[idx]); showTip();
           }, 300);
         });
-        g.addEventListener('mousemove', function (e) { if (tipShowing) placeTip(e); });
         g.addEventListener('mouseout', function () {
           clearTimeout(hoverTimer);
+          if (circle.getAttribute('stroke-width') !== '3') circle.setAttribute('stroke-width', '0.9');
           if (activeIdx === idx) activeIdx = null;
-          // Defer hide: if we've moved onto another node, its mouseover already
-          // set activeIdx, so we keep the tooltip; only hide if truly off all nodes.
-          setTimeout(function () {
-            if (activeIdx === null) { tip.style.display = 'none'; tipShowing = false; }
-          }, 10);
+          setTimeout(function () { if (activeIdx === null) hideTip(); }, 10);
         });
       });
       document.querySelectorAll('.conn-tab').forEach(function (t) {
@@ -313,6 +575,8 @@
       DATA = data;
       document.getElementById('conn-status').style.display = 'none';
       document.querySelectorAll('.conn-tab').forEach(function (t) { t.addEventListener('click', function () { paint(t.getAttribute('data-view')); }); });
+      var favChk = document.getElementById('conn-fav-toggle');
+      if (favChk) favChk.addEventListener('change', function () { favoritesOnly = favChk.checked; paint(currentView); });
       paint('outside');
     }).catch(function (err) { document.getElementById('conn-status').textContent = 'Could not load citation data: ' + err.message; });
   }
