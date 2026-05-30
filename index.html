@@ -373,9 +373,21 @@
     window.addEventListener('load', () => {
       const params = new URLSearchParams(window.location.search);
       const doiParam = params.get('doi');
+      const wantConnections = params.get('connections') === '1';
       if (doiParam) {
         input.value = decodeURIComponent(doiParam);
         runLookup();
+        // If the share link asked for Connections, poll briefly for the trigger
+        // button to appear on the rendered card, then click it. Cap retries so
+        // we don't loop forever if the lookup failed.
+        if (wantConnections) {
+          let tries = 0;
+          const timer = setInterval(() => {
+            const btn = document.querySelector('.conn-graph-trigger');
+            if (btn) { btn.click(); clearInterval(timer); }
+            else if (++tries > 60) clearInterval(timer);  // ~12s cap
+          }, 200);
+        }
       } else {
         showExamplePlaceholder();
       }
