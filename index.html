@@ -361,6 +361,11 @@
     // Store all result data objects for CSV export
     let _allResults = [];
 
+    // Captured once at load: was the page opened to show the connections chart?
+    // The replaceState URL rewrites below re-append this so the chart param
+    // survives and the URL stays a valid "open straight to chart" link.
+    const _connectionsFlag = new URLSearchParams(window.location.search).get('connections') === '1' ? '&connections=1' : '';
+
     // Enter = submit, Shift+Enter = newline
     input.addEventListener('keydown', e => {
       if (e.key === 'Enter' && !e.shiftKey) {
@@ -369,25 +374,17 @@
       }
     });
 
-    // Check for ?doi= query parameter on page load — supports comma-separated list
+    // Check for ?doi= query parameter on page load — supports comma-separated list.
+    // If &connections=1 is also present, connectionsGraph.js's attachButton sees
+    // it on the rendered card and opens the Connections panel automatically.
     window.addEventListener('load', () => {
       const params = new URLSearchParams(window.location.search);
       const doiParam = params.get('doi');
-      const wantConnections = params.get('connections') === '1';
       if (doiParam) {
-        input.value = decodeURIComponent(doiParam);
+        // params.get() already percent-decodes; decoding again corrupts DOIs
+        // containing '%' and can throw URIError. Use the value as-is.
+        input.value = doiParam;
         runLookup();
-        // If the share link asked for Connections, poll briefly for the trigger
-        // button to appear on the rendered card, then click it. Cap retries so
-        // we don't loop forever if the lookup failed.
-        if (wantConnections) {
-          let tries = 0;
-          const timer = setInterval(() => {
-            const btn = document.querySelector('.conn-graph-trigger');
-            if (btn) { btn.click(); clearInterval(timer); }
-            else if (++tries > 60) clearInterval(timer);  // ~12s cap
-          }, 200);
-        }
       } else {
         showExamplePlaceholder();
       }
@@ -483,6 +480,7 @@
 
     // The DOI used when a visitor types "example" / "sample" to see a demo lookup.
     const EXAMPLE_DOI = '10.1038/s41586-025-09227-0';
+    const EXAMPLE_RETRACTED_DOI = '10.1016/S0140-6736(97)11096-0';
 
     async function runLookup() {
       removeExamplePlaceholder();
@@ -494,7 +492,13 @@
 
       // Convenience: typing "example" or "sample" runs a demo DOI lookup so a
       // first-time visitor can instantly see what a result looks like.
-      if (/^(example|sample|demo|try)$/i.test(raw)) {
+      // "tryretraction" / "tryretracted" (space optional) load a known
+      // retracted paper so users — and we — can see a retraction in action.
+      if (/^try ?retract(ion|ed)$/i.test(raw)) {
+        raw = EXAMPLE_RETRACTED_DOI;
+        input.value = EXAMPLE_RETRACTED_DOI;
+        setStatus('Showing an example retracted article…');
+      } else if (/^(example|sample|demo|try)$/i.test(raw)) {
         raw = EXAMPLE_DOI;
         input.value = EXAMPLE_DOI;
         setStatus('Showing an example lookup…');
@@ -582,7 +586,7 @@
       // Combine existing + new DOIs and update URL for shareability
       const allDois = [...newDois, ...existingDois];
       const nocache = new URLSearchParams(window.location.search).has('nocache');
-      history.replaceState(null, '', `?doi=${encodeURIComponent(allDois.join(',')).replace(/\(/g, '%28').replace(/\)/g, '%29')}${nocache ? '&nocache' : ''}`);
+      history.replaceState(null, '', `?doi=${encodeURIComponent(allDois.join(',')).replace(/\(/g, '%28').replace(/\)/g, '%29')}${nocache ? '&nocache' : ''}${_connectionsFlag}`);
 
       btn.disabled = true;
       window.__xdoiResult = null;
@@ -676,7 +680,7 @@
       const dois = _allResults.map(r => r._doi);
       const nocache = new URLSearchParams(window.location.search).has('nocache');
       if (dois.length > 0) {
-        history.replaceState(null, '', `?doi=${encodeURIComponent(dois.join(',')).replace(/\(/g, '%28').replace(/\)/g, '%29')}${nocache ? '&nocache' : ''}`);
+        history.replaceState(null, '', `?doi=${encodeURIComponent(dois.join(',')).replace(/\(/g, '%28').replace(/\)/g, '%29')}${nocache ? '&nocache' : ''}${_connectionsFlag}`);
       } else {
         history.replaceState(null, '', window.location.pathname);
       }

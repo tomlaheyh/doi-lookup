@@ -219,6 +219,15 @@ Different sources (Google Scholar, Scopus, Web of Science) calculate these metri
       ref: 'https://scholar.google.com/intl/en/scholar/about.html'
     },
     // =====================
+    // CONNECTIONS GRAPH
+    // =====================
+    {
+      section: 'Connections Graph',
+      label: 'Exploring connections',
+      description: 'After a lookup, click "View connections graph" to see the article at the center of a wheel of related papers — the works it cites and the works citing it, drawn from OpenAlex. Click any node to open a detail card with its title, journal, quality tier, citation count, and links. Spokes are weighted by shared references, so more strongly related papers stand out. Retracted papers are flagged directly in the graph. Click a node\'s "shared references" count to reveal the overlapping references (title + DOI), and use "Make this center" to recenter the wheel on that paper — your browser\'s back button returns to the previous view.',
+      ref: 'https://openalex.org/'
+    },
+    // =====================
     // REGISTRATION AGENCIES
     // =====================
     {

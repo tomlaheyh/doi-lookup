@@ -19,6 +19,18 @@
 (function () {
   'use strict';
 
+  // Captured ONCE at load (page-parse time), before any lookup runs and before
+  // index.html rewrites the URL with replaceState (which drops connections=1).
+  // attachButton checks this instead of the live URL so the rewrite can't
+  // sabotage the auto-open.
+  var _autoOpenDoi = null;
+  try {
+    var _initParams = new URLSearchParams(window.location.search);
+    if (_initParams.get('connections') === '1') {
+      _autoOpenDoi = (_initParams.get('doi') || '').toLowerCase();
+    }
+  } catch (e) { /* ignore */ }
+
   var OPENALEX = 'https://api.openalex.org/works';
   var N_SINGLE = 25, N_MIX_EACH = 12;
 
@@ -105,6 +117,30 @@
       });
   }
 
+  // Resolve a list of shared-reference OpenAlex IDs to { oaId, doi, title }.
+  // Used by the card when a user clicks the "N shared references" count.
+  // Reuses the same batch-by-id OpenAlex filter pattern as fetchRefs above.
+  function fetchSharedRefs(ids) {
+    var clean = (ids || [])
+      .map(function (u) { return String(u).replace(/^https?:\/\/openalex\.org\//, ''); })
+      .filter(Boolean);
+    if (!clean.length) return Promise.resolve([]);
+    var batch = clean.slice(0, 100); // OpenAlex OR-filter cap
+    var url = OPENALEX + '?filter=openalex_id:' + batch.join('|') +
+              '&per-page=' + batch.length + '&select=id,doi,display_name';
+    return fetch(url)
+      .then(function (r) { if (!r.ok) throw new Error('shared-refs ' + r.status); return r.json(); })
+      .then(function (d) {
+        return (d.results || []).map(function (w) {
+          return {
+            oaId: w.id ? String(w.id).replace('https://openalex.org/', '') : null,
+            doi: w.doi ? String(w.doi).replace(/^https?:\/\/(dx\.)?doi\.org\//, '') : null,
+            title: w.display_name || '(untitled)'
+          };
+        });
+      });
+  }
+
   function buildData(workId) {
     var key = SCACHE + String(workId).toLowerCase().replace(/^https?:\/\/openalex\.org\//, '');
     try { var c = sessionStorage.getItem(key); if (c) return Promise.resolve(JSON.parse(c)); } catch (e) {}
@@ -131,11 +167,13 @@
         var centerRefSet = {};
         (refs.centerRefs || []).forEach(function (r) { centerRefSet[r] = 1; });
         function countShared(node) {
-          var c = 0, list = node.refs || [];
-          for (var i = 0; i < list.length; i++) if (centerRefSet[list[i]]) c++;
-          node.shared = c;
-          // We do NOT keep `refs` on the cached node: it can be huge and we
-          // only needed it for this computation.
+          var list = node.refs || [], sharedList = [];
+          for (var i = 0; i < list.length; i++) if (centerRefSet[list[i]]) sharedList.push(list[i]);
+          node.shared = sharedList.length;
+          // Keep ONLY the shared (overlapping) ref IDs — small, used by the
+          // card to fetch+show shared references on demand. We still drop the
+          // full `refs` list below, which can be huge.
+          node.sharedRefs = sharedList;
           delete node.refs;
           return node;
         }
@@ -207,6 +245,13 @@
         strokeColor = (n.direction === 'in') ? '#c9c6bc' : '#bcd2ea';
         markerSuffix = (n.direction === 'in') ? 'Out' : 'In';
       }
+      // Hidden "halo" line drawn UNDER the spoke — shown on selection to create
+      // a soft track effect that distinguishes selected from heavily-coupled spokes.
+      // Always emit it; toggle visibility via the inline style attribute.
+      if (n.direction === 'in')
+        p.push('<line class="conn-halo" data-idx="' + a + '" x1="' + hx.toFixed(1) + '" y1="' + hy.toFixed(1) + '" x2="' + nx.toFixed(1) + '" y2="' + ny.toFixed(1) + '" stroke="#bcd2ea" stroke-width="7" stroke-linecap="round" style="display:none;"/>');
+      else
+        p.push('<line class="conn-halo" data-idx="' + a + '" x1="' + nx.toFixed(1) + '" y1="' + ny.toFixed(1) + '" x2="' + hx.toFixed(1) + '" y2="' + hy.toFixed(1) + '" stroke="#bcd2ea" stroke-width="7" stroke-linecap="round" style="display:none;"/>');
       if (n.direction === 'in')
         // reference: center → node
         p.push('<line class="conn-spoke" data-idx="' + a + '" data-shared="' + shared + '" data-natural-sw="' + sw + '" x1="' + hx.toFixed(1) + '" y1="' + hy.toFixed(1) + '" x2="' + nx.toFixed(1) + '" y2="' + ny.toFixed(1) + '" stroke="' + strokeColor + '" stroke-width="' + sw + '" marker-end="url(#arr' + markerSuffix + ')"/>');
@@ -268,6 +313,12 @@
     var links = [];
     if (node.doi) links.push('<a href="https://doi.org/' + esc(node.doi) + '" target="_blank" rel="noopener" style="color:#005a8c;">View article (DOI) \u2192</a>');
     if (node.oaId) links.push('<a href="https://openalex.org/' + esc(node.oaId) + '" target="_blank" rel="noopener" style="color:#005a8c;">OpenAlex \u2192</a>');
+    // "Make this center" — only meaningful if we have a DOI to navigate to,
+    // and only relevant in real (panel-scoped) sessions where favCtx exists.
+    var canMakeCenter = !!(favCtx && node.doi);
+    var makeCenterBtn = canMakeCenter
+      ? '<button class="conn-make-center-btn" data-doi="' + esc(node.doi) + '" style="font-family:\'IBM Plex Mono\',monospace; font-size:11px; padding:4px 10px; border:1px solid #005a8c; background:#fff; color:#005a8c; cursor:pointer; letter-spacing:0.3px;">Make this center</button>'
+      : '';
     var retractedBadge = node.retracted
       ? '<span style="display:inline-block; background:#cc0000; color:#fff; font-size:9px; font-weight:700; letter-spacing:0.5px; padding:2px 7px; border-radius:3px; margin-right:8px; vertical-align:2px;">RETRACTED</span>'
       : '';
@@ -280,14 +331,69 @@
       '<div style="font-size:11px; text-transform:uppercase; letter-spacing:0.6px; color:#9a978d; margin-bottom:6px;">' + numPrefix + dirLabel + '</div>' +
       '<div style="font-size:15px; font-weight:600; line-height:1.35; color:#1a1a18; margin-bottom:8px;">' + retractedBadge + heart + esc(node.title) + '</div>' +
       '<div style="font-size:12px; color:#666; margin-bottom:4px;">' + esc(node.journal || '') + (node.year ? (node.journal ? ', ' : '') + node.year : '') + '</div>' +
-      '<div style="font-size:12px; color:#666; margin-bottom:10px;">' + node.cites.toLocaleString() + ' citations &#183; <span style="color:' + node.tier.text + ';">' + node.tier.label + ' quality</span> &#183; ' + ((node.shared && node.shared > 0) ? '<span style="color:#005a8c; font-weight:600;">' + node.shared + ' shared reference' + (node.shared === 1 ? '' : 's') + '</span>' : '<span>0 shared references</span>') + '</div>' +
-      (links.length ? '<div style="font-size:12px; margin-bottom:12px; display:flex; gap:14px;">' + links.join('') + '</div>' : '') +
+      '<div style="font-size:12px; color:#666; margin-bottom:10px;">' + node.cites.toLocaleString() + ' citations &#183; <span style="color:' + node.tier.text + ';">' + node.tier.label + ' quality</span> &#183; ' + ((node.shared && node.shared > 0) ? '<span id="conn-shared-toggle" role="button" tabindex="0" style="color:#005a8c; cursor:pointer; text-decoration:underline;">' + node.shared + ' shared reference' + (node.shared === 1 ? '' : 's') + '</span>' : '<span>0 shared references</span>') + '</div>' +
+      '<div id="conn-shared-list" style="display:none; margin:-4px 0 10px; font-size:12px;"></div>' +
+      ((links.length || makeCenterBtn) ? '<div style="font-size:12px; margin-bottom:12px; display:flex; gap:14px; align-items:center; flex-wrap:wrap;">' + links.join('') + makeCenterBtn + '</div>' : '') +
       '<div style="border-top:1px solid #e5e2d9; padding-top:10px;"><div style="font-size:11px; text-transform:uppercase; letter-spacing:0.6px; color:#9a978d; margin-bottom:6px;">Abstract</div>' +
       '<div id="conn-abstract" style="font-size:13px; line-height:1.5; color:#333;">Loading\u2026</div></div>';
     // Wire the heart button to the favorites context (if applicable)
     if (canFavorite) {
       var btn = el.querySelector('.conn-fav-btn');
       if (btn) btn.addEventListener('click', function () { favCtx.toggle(node); });
+    }
+    if (canMakeCenter) {
+      var mcBtn = el.querySelector('.conn-make-center-btn');
+      if (mcBtn) mcBtn.addEventListener('click', function () { favCtx.makeCenter(node.doi, node.title); });
+    }
+    // Shared-references reveal: fetch DOI + title for the shared ref IDs on
+    // first click, cache the result, toggle visibility on subsequent clicks.
+    var shToggle = el.querySelector('#conn-shared-toggle');
+    var shList = el.querySelector('#conn-shared-list');
+    if (shToggle && shList) {
+      var shLoaded = false, shLoading = false;
+      var hideList = function () { shList.style.display = 'none'; };
+      var closeHeader = '<div style="display:flex; justify-content:flex-end; margin-bottom:2px;">' +
+        '<span id="conn-shared-close" role="button" tabindex="0" title="Close" style="cursor:pointer; color:#888; font-size:14px; line-height:1; padding:2px 4px;">\u2715</span></div>';
+      var wireClose = function () {
+        var x = shList.querySelector('#conn-shared-close');
+        if (x) x.addEventListener('click', hideList);
+      };
+      var renderShared = function (items) {
+        if (!items.length) {
+          shList.innerHTML = closeHeader + '<span style="color:#999; font-style:italic;">No shared references found.</span>';
+          wireClose();
+          return;
+        }
+        var rows = items.map(function (it) {
+          var doiHtml = it.doi
+            ? '<a href="https://doi.org/' + encodeURIComponent(it.doi) + '" target="_blank" rel="noopener" style="color:#005a8c; font-family:monospace; text-decoration:none;">' + esc(it.doi) + '</a>'
+            : '<span style="color:#999; font-style:italic;">no DOI</span>';
+          return '<div style="padding:5px 0; border-bottom:1px solid #f0eee7; line-height:1.4;">' +
+                   '<div style="color:#1a1a18;">' + esc(it.title) + '</div>' +
+                   '<div style="margin-top:1px;">' + doiHtml + '</div>' +
+                 '</div>';
+        }).join('');
+        shList.innerHTML = closeHeader + rows;
+        wireClose();
+      };
+      shToggle.addEventListener('click', function () {
+        if (shLoading) return;
+        // Already loaded → just toggle visibility.
+        if (shLoaded) {
+          shList.style.display = (shList.style.display === 'none') ? 'block' : 'none';
+          return;
+        }
+        shLoading = true;
+        shList.style.display = 'block';
+        shList.innerHTML = '<span style="color:#999;">Loading shared references\u2026</span>';
+        fetchSharedRefs(node.sharedRefs || []).then(function (items) {
+          shLoaded = true; shLoading = false;
+          renderShared(items);
+        }).catch(function () {
+          shLoading = false;
+          shList.innerHTML = '<span style="color:#b00; font-style:italic;">Could not load shared references. Try again.</span>';
+        });
+      });
     }
     getAbstract(node).then(function (res) {
       var ab = document.getElementById('conn-abstract');
@@ -324,11 +430,11 @@
       '<div style="display:flex; flex-wrap:wrap; align-items:flex-start;">' +
         '<div id="conn-graphpane" style="flex:1 1 560px; min-width:320px; padding:14px;">' +
           '<div id="conn-status" style="font-size:13px; color:#666; padding:20px; text-align:center;">Loading citation data from OpenAlex\u2026</div>' +
-          '<div id="conn-graphpane-inner" style="position:relative;">' +
+          '<div id="conn-graphpane-inner" style="position:relative; background:#f6f9fc; border-radius:6px; padding:6px 0;">' +
             '<div id="conn-graphholder"></div>' +
             '<div id="conn-tip" style="position:absolute; left:50%; top:50%; transform:translate(-50%,-50%); z-index:5; display:none; width:230px; background:#ffffff; color:#1a1a18; font-family:\'IBM Plex Sans\',sans-serif; font-size:12px; line-height:1.4; padding:9px 12px; border:1px solid #d8d5cc; border-radius:6px; pointer-events:none; box-shadow:0 3px 12px rgba(0,0,0,0.15); -webkit-font-smoothing:antialiased; text-align:left;"></div>' +
           '</div>' +
-          '<div id="conn-legend" style="display:none; font-size:11px; color:#777; margin-top:6px; text-align:center;">Size = citations &#183; color = quality &#183; <span style="color:#185FA5;">\u2192 in</span> = cites this &#183; <span style="color:#9a978d;">\u2192 out</span> = referenced by this &#183; <span style="color:#005a8c; font-weight:600;">blue spoke = shares references with this article</span></div></div>' +
+          '<div id="conn-legend" style="display:none; font-size:11px; color:#777; margin-top:6px; text-align:center;">Size=citations &#183; color=quality &#183; <span style="color:#185FA5;">\u2192 in</span>=cites this &#183; <span style="color:#9a978d;">\u2192 out</span>=referenced by this &#183; <span style="color:#005a8c;">blue spoke=shares references with this article</span></div></div>' +
         '<div id="conn-detail" style="flex:1 1 360px; min-width:300px; padding:18px; border-left:1px solid #f0eee7; min-height:300px;">' +
           '<div style="color:#999; font-size:13px; font-style:italic; padding-top:40px; text-align:center;">Click any bubble to see its details and abstract.</div></div></div>' +
       '<div id="conn-list-section" style="border-top:1px solid #f0eee7; padding:14px 18px;">' +
@@ -388,22 +494,61 @@
       else { favSet[key] = true; favRecords[key] = favRecord(node); }
       paint(currentView);  // re-render list + right panel with new heart states
     }
-    var favCtx = { isFav: isFav, toggle: toggleFav };
+
+    // Make-this-center: show a styled confirmation modal warning the user that
+    // all current state will be lost, then navigate to a fresh Connections
+    // session for the chosen DOI. Navigation reuses the existing share-link
+    // infrastructure — same URL shape, same handler on page load.
+    function makeCenter(targetDoi, targetTitle) {
+      var url = _connectionsUrl(targetDoi);
+      showMakeCenterModal(targetTitle, url);
+    }
+
+    function showMakeCenterModal(targetTitle, targetUrl) {
+      // Remove any existing modal first
+      var existing = document.getElementById('conn-mc-modal');
+      if (existing) existing.remove();
+
+      var overlay = document.createElement('div');
+      overlay.id = 'conn-mc-modal';
+      overlay.style.cssText = 'position:fixed; inset:0; z-index:10001; background:rgba(0,0,0,0.45); display:flex; align-items:center; justify-content:center; padding:20px;';
+
+      var box = document.createElement('div');
+      box.style.cssText = 'background:#fff; border:1.5px solid #005a8c; max-width:480px; width:100%; padding:22px 24px; font-family:\'IBM Plex Sans\',sans-serif; box-shadow:0 4px 18px rgba(0,0,0,0.20);';
+      var truncated = truncate(targetTitle || 'this article', 80);
+      box.innerHTML =
+        '<div style="font-size:16px; font-weight:600; color:#005a8c; margin-bottom:12px; line-height:1.35;">Make this the new center?</div>' +
+        '<div style="font-size:13px; color:#1a1a18; margin-bottom:8px; line-height:1.5;">You\'ll start a fresh Connections session for:</div>' +
+        '<div style="font-size:13px; font-style:italic; color:#333; margin-bottom:14px; padding:8px 12px; background:#f6f9fc; border-left:2px solid #005a8c; line-height:1.4;">' + esc(truncated) + '</div>' +
+        '<div style="font-size:13px; color:#1a1a18; line-height:1.5; margin-bottom:8px;">All current work \u2014 favorites, retraction reveal, and view selection \u2014 will be lost.</div>' +
+        '<div style="font-size:13px; color:#cc0000; font-weight:600; margin-bottom:14px;">Export your favorites first if you need them.</div>' +
+        '<div style="font-size:12px; color:#666; margin-bottom:18px; line-height:1.5;">Use your browser\'s back button to return to this chart afterward.</div>' +
+        '<div style="display:flex; gap:10px; justify-content:flex-end;">' +
+          '<button id="conn-mc-cancel" style="font-family:\'IBM Plex Mono\',monospace; font-size:12px; padding:7px 16px; border:1px solid #888; background:#fff; color:#444; cursor:pointer; letter-spacing:0.3px;">Cancel</button>' +
+          '<button id="conn-mc-continue" style="font-family:\'IBM Plex Mono\',monospace; font-size:12px; padding:7px 16px; border:1px solid #005a8c; background:#005a8c; color:#fff; cursor:pointer; letter-spacing:0.3px;">Continue</button>' +
+        '</div>';
+      overlay.appendChild(box);
+      document.body.appendChild(overlay);
+
+      function close() { overlay.remove(); document.removeEventListener('keydown', onKey); }
+      function onKey(e) { if (e.key === 'Escape') close(); }
+      document.addEventListener('keydown', onKey);
+      // Click outside the box closes (treats as cancel)
+      overlay.addEventListener('click', function (e) { if (e.target === overlay) close(); });
+      document.getElementById('conn-mc-cancel').onclick = close;
+      document.getElementById('conn-mc-continue').onclick = function () {
+        window.location.href = targetUrl;
+      };
+    }
+
+    var favCtx = { isFav: isFav, toggle: toggleFav, makeCenter: makeCenter };
     var currentView = 'outside';
 
     // ── Share link: one place that builds the URL so export and Copy-link agree ──
     // Uses the current page origin so it works on doilookup.com, github.io mirror,
     // and local previews without hard-coding the host.
     function buildShareLink() {
-      // Prefer the canonical doilookup.com URL when on github.io / preview hosts;
-      // on the real site, location.origin === 'https://doilookup.com' anyway.
-      var origin = 'https://doilookup.com';
-      try {
-        var host = window.location.hostname.toLowerCase();
-        if (host === 'doilookup.com' || host === 'www.doilookup.com' || host === 'localhost' || host === '127.0.0.1')
-          origin = window.location.origin;
-      } catch (e) { /* fallback */ }
-      return origin + '/?doi=' + encodeURIComponent(doi) + '&connections=1';
+      return _connectionsUrl(doi);
     }
 
     // ── CSV export: rows = what's currently visible, columns include favorite flag ──
@@ -573,7 +718,7 @@
       if (journalYear) metaParts.push(esc(journalYear));
       metaParts.push(node.cites.toLocaleString() + ' citations');
       if (node.shared && node.shared > 0) {
-        metaParts.push('<span style="color:#005a8c; font-weight:600;">' + node.shared + ' shared reference' + (node.shared === 1 ? '' : 's') + '</span>');
+        metaParts.push('<span style="color:#005a8c;">' + node.shared + ' shared reference' + (node.shared === 1 ? '' : 's') + '</span>');
       } else {
         metaParts.push('0 shared references');
       }
@@ -602,9 +747,28 @@
       currentView = view;
       var info = document.getElementById('conn-viewinfo'), holder = document.getElementById('conn-graphholder');
       var rawNodes, label;
-      if (view === 'inside') { rawNodes = DATA.inside.nodes; label = DATA.inside.total.toLocaleString() + ' references in this article \u2014 showing top ' + rawNodes.length + ' by citations'; }
-      else if (view === 'mix') { rawNodes = DATA.mix.nodes; label = 'Top references + top citing articles, combined'; }
-      else { rawNodes = DATA.outside.nodes; label = DATA.outside.total.toLocaleString() + ' articles cite this \u2014 showing top ' + rawNodes.length + ' by citations'; }
+      if (view === 'inside') {
+        rawNodes = DATA.inside.nodes;
+        var insideTotal = DATA.inside.total;
+        if (insideTotal === 0)              label = 'No references found in OpenAlex';
+        else if (rawNodes.length >= insideTotal) label = 'Showing all ' + rawNodes.length + ' reference' + (rawNodes.length === 1 ? '' : 's');
+        else                                 label = insideTotal.toLocaleString() + ' references in this article \u2014 showing top ' + rawNodes.length + ' by citations';
+      } else if (view === 'mix') {
+        rawNodes = DATA.mix.nodes;
+        // Recompute the split: Mix is up to 12 refs + 12 citers from the same underlying data
+        var mixRefCount = 0, mixCiteCount = 0;
+        for (var mi = 0; mi < rawNodes.length; mi++) {
+          if (rawNodes[mi].direction === 'in') mixRefCount++; else mixCiteCount++;
+        }
+        if (rawNodes.length === 0)           label = 'No references or citing articles found';
+        else                                 label = 'Showing ' + mixRefCount + ' reference' + (mixRefCount === 1 ? '' : 's') + ' + ' + mixCiteCount + ' citing article' + (mixCiteCount === 1 ? '' : 's');
+      } else {
+        rawNodes = DATA.outside.nodes;
+        var outsideTotal = DATA.outside.total;
+        if (outsideTotal === 0)             label = 'No articles cite this yet';
+        else if (rawNodes.length >= outsideTotal) label = 'Showing all ' + rawNodes.length + ' citing article' + (rawNodes.length === 1 ? '' : 's');
+        else                                 label = outsideTotal.toLocaleString() + ' articles cite this \u2014 showing top ' + rawNodes.length + ' by citations';
+      }
 
       // Split raw into visible (non-retracted) and retracted
       var nodes = [], retractedNodes = [];
@@ -677,6 +841,7 @@
         currentSelected = node;
         holder.querySelectorAll('.conn-node circle').forEach(function (c) { c.setAttribute('stroke-width', '0.9'); });
         holder.querySelectorAll('.conn-spoke').forEach(function (s) { s.setAttribute('stroke-width', s.getAttribute('data-natural-sw') || '1'); });
+        holder.querySelectorAll('.conn-halo').forEach(function (h) { h.style.display = 'none'; });
         listEl.querySelectorAll('.conn-row').forEach(function (r) { r.style.background = ''; });
 
         if (!node.retracted) {
@@ -685,6 +850,7 @@
           if (g) {
             var c = g.querySelector('circle'); if (c) c.setAttribute('stroke-width', '3');
             var sp = holder.querySelector('.conn-spoke[data-idx="' + graphIdx + '"]'); if (sp) sp.setAttribute('stroke-width', '3.6');
+            var halo = holder.querySelector('.conn-halo[data-idx="' + graphIdx + '"]'); if (halo) halo.style.display = '';
           }
         }
         var row = listIdAttr ? listEl.querySelector('.conn-row[data-idx="' + listIdAttr + '"]') : null;
@@ -724,6 +890,7 @@
             if (gEl) {
               var gC = gEl.querySelector('circle'); if (gC) gC.setAttribute('stroke-width', '3');
               var gSp = holder.querySelector('.conn-spoke[data-idx="' + gIdx + '"]'); if (gSp) gSp.setAttribute('stroke-width', '3.6');
+              var gHalo = holder.querySelector('.conn-halo[data-idx="' + gIdx + '"]'); if (gHalo) gHalo.style.display = '';
             }
           }
         }
@@ -772,7 +939,7 @@
           : (node.journal ? truncate(node.journal, 50) : (node.year ? String(node.year) : ''));
         var jyLine = journalYear ? '<div style="font-size:11px; color:#888780; margin-top:3px;">' + esc(journalYear) + '</div>' : '';
         var sharedHtml = (node.shared && node.shared > 0)
-          ? '<span style="color:#005a8c; font-weight:600;">' + node.shared + ' shared reference' + (node.shared === 1 ? '' : 's') + '</span>'
+          ? '<span style="color:#005a8c;">' + node.shared + ' shared reference' + (node.shared === 1 ? '' : 's') + '</span>'
           : '0 shared references';
         var citesShared = '<div style="font-size:11px; color:#888780; margin-top:3px;">' + node.cites.toLocaleString() + ' citations \u00b7 ' + sharedHtml + '</div>';
         tip.innerHTML = '<div style="font-weight:500; color:#1a1a18;">' + esc(truncate(node.title, 90)) + '</div>' + jyLine + citesShared;
@@ -826,6 +993,22 @@
     }).catch(function (err) { document.getElementById('conn-status').textContent = 'Could not load citation data: ' + err.message; });
   }
 
+  // Build the share/connections URL for a given DOI — same logic used elsewhere.
+  // Preserves the current page's pathname so localhost previews (/index.html) and
+  // GitHub project sites (/ref-lookup/) work, not just doilookup.com root.
+  function _connectionsUrl(doi) {
+    var origin = 'https://doilookup.com';
+    var pathname = '/';
+    try {
+      var host = window.location.hostname.toLowerCase();
+      if (host === 'doilookup.com' || host === 'www.doilookup.com' || host === 'localhost' || host === '127.0.0.1') {
+        origin = window.location.origin;
+        pathname = window.location.pathname || '/';
+      }
+    } catch (e) { /* fallback */ }
+    return origin + pathname + '?doi=' + encodeURIComponent(doi) + '&connections=1';
+  }
+
   function attachButton(result, doi) {
     setTimeout(function () {
       var cardId = 'card-' + String(doi).replace(/[^a-zA-Z0-9]/g, '-');
@@ -834,9 +1017,25 @@
       var btn = document.createElement('button');
       btn.className = 'conn-graph-trigger';
       btn.textContent = 'View connections graph';
-      btn.style.cssText = 'margin-top:12px; font-family:"IBM Plex Mono",monospace; font-size:12px; font-weight:600; padding:7px 14px; border:1px solid #005a8c; background:#fff; color:#005a8c; cursor:pointer; letter-spacing:0.3px;';
-      btn.addEventListener('click', function () { openPanel(result, doi); });
-      card.appendChild(btn);
+      btn.style.cssText = 'font-family:"IBM Plex Mono",monospace; font-size:12px; font-weight:600; padding:7px 14px; border:1px solid #005a8c; background:#fff; color:#005a8c; cursor:pointer; letter-spacing:0.3px;';
+      btn.addEventListener('click', function () {
+        // Navigate to the DOI + chart URL; full reload runs a fresh lookup and
+        // opens the chart on the load side. URL becomes copyable/shareable.
+        window.location.href = _connectionsUrl(doi);
+      });
+      // Prefer the dedicated slot just below the DOI line; fall back to appending
+      // to the card if the slot is missing (older card templates).
+      var slot = card.querySelector('.conn-trigger-slot');
+      if (slot) slot.appendChild(btn);
+      else card.appendChild(btn);
+
+      // If the URL requested the chart for this DOI (captured at load, before
+      // index.html rewrote the URL), open it now.
+      try {
+        if (_autoOpenDoi && doi && _autoOpenDoi === doi.toLowerCase()) {
+          if (!document.getElementById('conn-graph-panel')) openPanel(result, doi);
+        }
+      } catch (e) { /* ignore */ }
     }, 0);
   }
 

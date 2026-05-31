@@ -203,7 +203,7 @@ async function handleDOILookup(doiInput) {
     // ── Fast pre-flight: validate DOI exists via doi.org/doiRA (1-2 seconds) ──
     // This gives the user immediate feedback and avoids a 16+ second wait on bad DOIs.
     const statusEl = document.getElementById('status');
-    if (statusEl) statusEl.innerHTML = `<span class="spinner"></span>Validating DOI: ${doi}`;
+    if (statusEl) statusEl.innerHTML = `<span class="spinner"></span>Validating DOI: ${escapeHtml(doi)}`;
 
     let raData = null;
     try {
@@ -230,7 +230,7 @@ async function handleDOILookup(doiInput) {
     }
 
     // ── DOI confirmed — update status and proceed ──
-    if (statusEl) statusEl.innerHTML = `<span class="spinner"></span>DOI found (${ra || 'unknown RA'}), fetching data: ${doi}`;
+    if (statusEl) statusEl.innerHTML = `<span class="spinner"></span>DOI found (${escapeHtml(ra || 'unknown RA')}), fetching data: ${escapeHtml(doi)}`;
     console.log(`[DOI Lookup] Pre-check passed: RA = ${ra}`);
     
     // Step 1: Get DOI RA data (CrossRef, DataCite, JaLC, mEDRA, etc.)
@@ -272,7 +272,7 @@ async function handleDOILookup(doiInput) {
     }
     
     console.log('[DOI Lookup] All data fetched, checking external services...');
-    if (statusEl) statusEl.innerHTML = `<span class="spinner"></span>Enriching metadata: ${doi}`;
+    if (statusEl) statusEl.innerHTML = `<span class="spinner"></span>Enriching metadata: ${escapeHtml(doi)}`;
     
     // Step 4: Check all external services BEFORE showing modal
     let linksData = null;
@@ -283,18 +283,6 @@ async function handleDOILookup(doiInput) {
     }
     
     console.log('[DOI Lookup] All data ready, displaying modal');
-
-    // ORCID source comparison log - remove once merge logic is finalised
-    console.log('[ORCID Sources] First author:', {
-      crossref:  allData.raFirstAuthorOrcid        || allData.doiOrgFirstAuthorOrcid || null,
-      pubmed:    allData.pubmedAuthorFirstORCID     || null,
-      openalex:  allData._oaFirstAuthorOrcid        || null,
-    });
-    console.log('[ORCID Sources] Last author:', {
-      crossref:  allData.raLastAuthorOrcid         || allData.doiOrgLastAuthorOrcid  || null,
-      pubmed:    allData.pubmedAuthorLastORCID      || null,
-      openalex:  allData._oaLastAuthorOrcid         || null,
-    });
 
     // Cache in session before displaying
     _sessionCacheSet(doi, allData, linksData);
@@ -483,7 +471,7 @@ function showDOIModal(result, linksHtml) {
     html += '<span style="color: #666;">ORCID:</span> ';
     html += hasOrcid
       ? `<span style="color: #333; font-family: monospace;">${escapeHtml(orcidId)}</span>`
-      : '<span style="color: #ccc;">not available</span>';
+      : '<span style="color: #333;">not available</span>';
     html += '</div>';
 
     // Scores
@@ -491,7 +479,7 @@ function showDOIModal(result, linksHtml) {
     if (metrics) {
       html += `<span style="color: #333;">h-index: ${metrics.hIndex ?? 'N/A'}, i10-index: ${metrics.i10Index ?? 'N/A'}, 2yr cites: ${metrics.twoYrCites ?? 'N/A'} <span style="color: #999; font-size: 11px;">(OpenAlex via ORCID)</span></span>`;
     } else {
-      html += '<span style="color: #ccc;">h-index: N/A, i10-index: N/A, 2yr cites: N/A</span>';
+      html += '<span style="color: #333;">h-index: N/A, i10-index: N/A, 2yr cites: N/A</span>';
     }
     html += '</div>';
 
@@ -552,6 +540,7 @@ function showDOIModal(result, linksHtml) {
     }
     doiLine += ` | <a href="#" onclick="event.preventDefault(); CitationBuilder.showCiteModal(window['${citeRefKey}'])" style="color: #005a8c;">Cite this paper</a>`;
     html += `<div style="font-family: monospace; font-size: 17px; font-weight: bold; color: #666; margin-bottom: 8px;">${doiLine}</div>`;
+    html += `<div class="conn-trigger-slot" style="margin: 0 0 10px;"></div>`;
   }
 
   // Retraction / correction banner — shown above title when update-to entries exist
@@ -1054,9 +1043,9 @@ function showDOIModal(result, linksHtml) {
     }
   }
 
-  // ---- ORCID source comparison (testing) ----
+  // ---- ORCID source comparison ----
   {
-    const na = '<span style="color:#ccc;">—</span>';
+    const na = '<span style="color:#333;">—</span>';
     const fmt = (name, orcid) => {
       const n = name ? escapeHtml(name) : na;
       const o = orcid ? `<span style="font-family:monospace;font-size:12px;color:#444;">${escapeHtml(orcid)}</span>` : na;
@@ -1064,11 +1053,11 @@ function showDOIModal(result, linksHtml) {
     };
 
     html += '<div style="margin-top:14px;padding-top:12px;border-top:1px solid #d8d5cc;">';
-    html += '<div style="font-family:monospace;font-size:11px;color:#888;font-weight:normal;margin-bottom:6px;">ORCID source comparison</div>';
+    html += '<div style="font-family:monospace;font-size:11px;color:#333;font-weight:normal;margin-bottom:6px;">ORCID source comparison</div>';
 
     // Table header
     html += '<table style="font-size:12px;border-collapse:collapse;width:100%;">';
-    html += '<tr style="color:#888;">';
+    html += '<tr style="color:#333;">';
     html += '<td style="padding:2px 8px 4px 0;width:90px;">Source</td>';
     html += '<td style="padding:2px 8px 4px 0;">First Author &nbsp; ORCID</td>';
     html += '<td style="padding:2px 0 4px 0;">Last Author &nbsp; ORCID</td>';
