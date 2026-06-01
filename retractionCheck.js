@@ -18,17 +18,38 @@
   var CROSSREF = 'https://api.crossref.org/works/';
   var BLOCKED_TYPES = ['retraction', 'expression-of-concern'];
   var TIMEOUT_MS = 6000;            // per-DOI timeout, generous
-  var CONCURRENCY = 8;              // parallel requests cap
-  var CACHE = {};                   // in-memory cache: doi → bool
+  var CONCURRENCY = 3;              // parallel requests cap (CrossRef-friendly)
+  var CACHE = {};                   // in-memory cache: doi → bool (confirmed only)
+  var SKEY = 'retractionCheckCache';
 
-  // Fetch with timeout, returning null on failure (we treat "couldn't check" as not-retracted)
+  // Seed from sessionStorage so reloads (and repeat visits in the same session)
+  // don't re-hit CrossRef for DOIs already confirmed this session.
+  try {
+    var _saved = sessionStorage.getItem(SKEY);
+    if (_saved) {
+      var _parsed = JSON.parse(_saved);
+      if (_parsed && typeof _parsed === 'object') CACHE = _parsed;
+    }
+  } catch (e) { /* sessionStorage unavailable or corrupt — start empty */ }
+
+  function _persistCache() {
+    try { sessionStorage.setItem(SKEY, JSON.stringify(CACHE)); } catch (e) { /* quota/unavailable — in-memory still works */ }
+  }
+
+  // Distinct marker for "couldn't check" (timeout / network / non-ok / 429),
+  // so callers can tell a real failure apart from a valid empty response.
+  var FAILED = { __failed: true };
+
+  // Fetch with timeout. Resolves parsed JSON on success, or FAILED on any
+  // failure (timeout, network error, or non-ok status including 429).
   function fetchWithTimeout(url, ms) {
     return new Promise(function (resolve) {
-      var t = setTimeout(function () { resolve(null); }, ms);
+      var t = setTimeout(function () { resolve(FAILED); }, ms);
       fetch(url).then(function (r) {
         clearTimeout(t);
-        resolve(r && r.ok ? r.json() : null);
-      }).catch(function () { clearTimeout(t); resolve(null); });
+        if (r && r.ok) { r.json().then(resolve).catch(function () { resolve(FAILED); }); }
+        else { resolve(FAILED); }
+      }).catch(function () { clearTimeout(t); resolve(FAILED); });
     });
   }
 
@@ -53,13 +74,18 @@
   }
 
   // Check one DOI (with caching). Resolves true/false.
+  // A failed check (FAILED) resolves false (treated as "no flag" by callers)
+  // but is NOT cached, so a transient failure/429 doesn't get permanently
+  // remembered as "not retracted" — it will be re-checked next time.
   function checkOne(doi) {
     if (!doi) return Promise.resolve(false);
     var key = String(doi).toLowerCase();
     if (Object.prototype.hasOwnProperty.call(CACHE, key)) return Promise.resolve(CACHE[key]);
     return fetchWithTimeout(CROSSREF + encodeURIComponent(key), TIMEOUT_MS).then(function (data) {
-      var retracted = data ? isRetractedFromCrossref(data) : false;
+      if (data === FAILED) return false;            // couldn't check → no flag, don't cache
+      var retracted = isRetractedFromCrossref(data); // confirmed answer
       CACHE[key] = retracted;
+      _persistCache();
       return retracted;
     });
   }

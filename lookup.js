@@ -53,6 +53,9 @@ async function _loadSJRCache() {
 
 // Expose SJR lookup for connectionsGraph.js (node quality coloring)
 window.__getSjrByIssn = function (issn) { return _sjrCache ? _sjrCache.get(issn) : null; };
+// Expose the loader too, so the connections graph can ensure the cache is
+// populated BEFORE it builds nodes (otherwise nodes bake in null/gray tiers).
+window.__loadSjrCache = _loadSJRCache;
 
 function _parseSJRCsvLine(line) {
   const res = [];
@@ -612,6 +615,10 @@ function showDOIModal(result, linksHtml) {
       } else {
         html += `<div style="font-size: 14px; color: #555; font-weight: 300; margin-bottom: 10px; line-height: 1.5;">${truncatedSafe}</div>`;
       }
+    } else {
+      // No abstract from any source — show an explicit note rather than blank
+      // space, so users know we checked and there simply isn't one.
+      html += `<div style="font-size: 14px; color: #777; font-style: italic; font-weight: 300; margin-bottom: 10px; line-height: 1.5;">No abstract available.</div>`;
     }
   }
 

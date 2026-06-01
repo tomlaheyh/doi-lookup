@@ -51,7 +51,7 @@
       '<path d="M12 21s-7-4.35-9.5-9C1 8.5 3 5 6.5 5c1.74 0 3.41 1 4.5 2.5C12.09 6 13.76 5 15.5 5 19 5 21 8.5 21.5 12c-2.5 4.65-9.5 9-9.5 9z" fill="' + fill + '" stroke="' + stroke + '" stroke-width="1.6" stroke-linejoin="round"/></svg>';
   }
 
-  var SCACHE = 'connGraph5:';
+  var SCACHE = 'connGraph6:';
 
   function qualityTier(sjr) {
     if (sjr === null || isNaN(sjr)) return { label: 'Unknown', fill: '#F1EFE8', stroke: '#888780', text: '#2C2C2A' };
@@ -144,7 +144,15 @@
   function buildData(workId) {
     var key = SCACHE + String(workId).toLowerCase().replace(/^https?:\/\/openalex\.org\//, '');
     try { var c = sessionStorage.getItem(key); if (c) return Promise.resolve(JSON.parse(c)); } catch (e) {}
-    return Promise.all([fetchCiters(workId, N_SINGLE), fetchRefs(workId, N_SINGLE)]).then(function (res) {
+    // Ensure the SJR cache is loaded BEFORE building nodes — node tiers (and
+    // thus bubble colors) are computed at build time via sjrForIssns, so if the
+    // cache isn't ready every node bakes in a null/gray tier.
+    var sjrReady = (typeof window.__loadSjrCache === 'function')
+      ? window.__loadSjrCache().catch(function () { return null; })
+      : Promise.resolve(null);
+    return sjrReady.then(function () {
+      return Promise.all([fetchCiters(workId, N_SINGLE), fetchRefs(workId, N_SINGLE)]);
+    }).then(function (res) {
       var citers = res[0], refs = res[1];
 
       // Collect unique DOIs from both sides for the retraction batch check
